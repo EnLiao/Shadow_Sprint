@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subway Surfers WebGL</title>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background-color: #333; color: white; font-family: Arial, sans-serif; }
+        canvas { border: 1px solid black; background-color: #70c5ce; /* Default background, will be cleared by WebGL */ }
+        #uiContainer { text-align: center; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; }
+        #startScreen { text-align: center; }
+        #gameOverScreen { text-align: center; display: none; }
+        button { padding: 10px 20px; font-size: 1.2em; cursor: pointer; margin-top: 10px; }
+    </style>
+</head>
+<body onload="main()">
+    <canvas id="webgl" width="600" height="800">
+        Please use a browser that supports "canvas"
+    </canvas>
+
+    <div id="uiContainer">
+        <div id="startScreen">
+            <h1>小黑人逃亡記！</h1>
+            <p>使用左右方向鍵移動</p>
+            <button id="startButton">開始遊戲</button>
+        </div>
+        <div id="gameOverScreen">
+            <h1>遊戲結束</h1>
+            <button id="restartButton">重新開始</button>
+        </div>
+    </div>
+
+    <script src="cuon-matrix.js"></script>
+    <script src="webgl-utils.js"></script>
+    <script src="WebGL.js"></script>
+</body>
+</html>
