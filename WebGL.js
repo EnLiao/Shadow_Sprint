@@ -1,6 +1,3 @@
-// WebGL.js - Subway Surfers Game Logic (3D Version)
-
-// Shaders (for 3D objects with perspective)
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
@@ -30,11 +27,14 @@ let canvas;
 // Game state and UI elements
 let gameState = 'startScreen'; // 'startScreen', 'playing', 'gameOverScreen'
 let startScreenDiv, gameOverScreenDiv, startButton, restartButton;
+let scoreDiv, coinCountDiv; // UI elements for score and coin count
 
 // Game objects and parameters
 let player;
 let trains = [];
+let coins = []; // Array to store coin objects
 let score = 0;
+let coinCount = 0; // Counter for collected coins
 let lanes = [];
 
 // 3D Game world parameters
@@ -48,6 +48,13 @@ const PLAYER_DEPTH = 1.0;     // Player depth (increased for visibility)
 const TRAIN_WIDTH = 0.9;      // Train width
 const TRAIN_HEIGHT = 0.9;     // Train height
 const TRAIN_DEPTH = 2.0;      // Train depth (longer than player)
+// Coin parameters
+const COIN_RADIUS = 0.3;      // Coin radius
+const COIN_HEIGHT = 0.05;     // Coin thickness
+const COIN_SEGMENTS = 12;     // Number of segments for coin cylinder
+const COIN_ROTATION_SPEED = 90.0; // Degrees per second
+// Movement parameters
+const OBJECT_SPEED = 5.0;     // Unified speed for all moving objects
 
 // Lane X positions (center of the lane)
 const LANE_POSITIONS = [-LANE_SPACING, 0.0, LANE_SPACING];
@@ -62,6 +69,8 @@ let animationFrameId = null;
 let lastTimestamp = 0;
 let trainSpawnInterval = 2.0; // seconds
 let lastTrainSpawnTime = 0;
+let coinSpawnInterval = 1.5; // seconds
+let lastCoinSpawnTime = 0;
 
 // 3D Cube vertices and colors
 function createCube(width, height, depth, r, g, b) {
@@ -124,6 +133,81 @@ function createCube(width, height, depth, r, g, b) {
     ]);
     
     return { vertices, colors, indices };
+}
+
+// Create a cylinder (for coins)
+function createCylinder(radius, height, segments, r, g, b) {
+    const vertices = [];
+    const colors = [];
+    const indices = [];
+    
+    // Create the vertices for top and bottom faces
+    // Center of top face
+    vertices.push(0, height/2, 0);
+    colors.push(r, g, b, 1.0);
+    
+    // Center of bottom face
+    vertices.push(0, -height/2, 0);
+    colors.push(r, g, b, 1.0);
+    
+    // Create vertices for the perimeter
+    for (let i = 0; i < segments; i++) {
+        const angle = (i / segments) * Math.PI * 2;
+        const x = radius * Math.cos(angle);
+        const z = radius * Math.sin(angle);
+        
+        // Top perimeter
+        vertices.push(x, height/2, z);
+        colors.push(r, g, b, 1.0);
+        
+        // Bottom perimeter
+        vertices.push(x, -height/2, z);
+        colors.push(r * 0.8, g * 0.8, b * 0.8, 1.0); // Slightly darker for bottom
+    }
+    
+    // Create indices for top face (like a fan)
+    for (let i = 0; i < segments; i++) {
+        indices.push(
+            0, // Center of top face
+            2 + i * 2, // Current top perimeter point
+            2 + ((i + 1) % segments) * 2 // Next top perimeter point
+        );
+    }
+    
+    // Create indices for bottom face (like a fan)
+    for (let i = 0; i < segments; i++) {
+        indices.push(
+            1, // Center of bottom face
+            3 + ((i + 1) % segments) * 2, // Next bottom perimeter point (reversed order)
+            3 + i * 2 // Current bottom perimeter point
+        );
+    }
+    
+    // Create indices for the side faces
+    for (let i = 0; i < segments; i++) {
+        const current = 2 + i * 2;
+        const next = 2 + ((i + 1) % segments) * 2;
+        
+        // First triangle
+        indices.push(
+            current,
+            current + 1,
+            next
+        );
+        
+        // Second triangle
+        indices.push(
+            next,
+            current + 1,
+            next + 1
+        );
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        colors: new Float32Array(colors),
+        indices: new Uint8Array(indices)
+    };
 }
 
 // Lane class (3D version)
@@ -227,12 +311,12 @@ class Player {
 
 // Train class (3D version)
 class Train {
-    constructor(laneIndex, speed) {
+    constructor(laneIndex) {
         this.lane = laneIndex;
         this.x = LANE_POSITIONS[laneIndex];
         this.y = TRAIN_HEIGHT / 2; // Position train on the ground
         this.z = -LANE_LENGTH; // Start at the far end of the track
-        this.speed = speed;
+        this.speed = OBJECT_SPEED; // Use unified speed for all objects
         
         // Random color for the train (blue-ish)
         const r = Math.random() * 0.2;
@@ -275,6 +359,65 @@ class Train {
             maxY: this.y + TRAIN_HEIGHT / 2,
             minZ: this.z - TRAIN_DEPTH / 2,
             maxZ: this.z + TRAIN_DEPTH / 2,
+            lane: this.lane
+        };
+    }
+}
+
+// Coin class (3D version)
+class Coin {
+    constructor(laneIndex, zPosition) {
+        this.lane = laneIndex;
+        this.x = LANE_POSITIONS[laneIndex];
+        this.y = COIN_RADIUS + 0.1; // Position coin slightly above the ground
+        this.z = zPosition;
+        this.rotationY = 0; // Current rotation angle
+        this.collected = false;
+        this.speed = OBJECT_SPEED; // Use unified speed for all objects
+        
+        // Create a gold coin (cylinder)
+        const cylinder = createCylinder(COIN_RADIUS, COIN_HEIGHT, COIN_SEGMENTS, 1.0, 0.84, 0.0); // Gold color
+        
+        this.vertexBuffer = initArrayBufferForLaterUse(gl, cylinder.vertices, 3, gl.FLOAT);
+        this.colorBuffer = initArrayBufferForLaterUse(gl, cylinder.colors, 4, gl.FLOAT);
+        this.indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, cylinder.indices, gl.STATIC_DRAW);
+        this.numIndices = cylinder.indices.length;
+    }
+    
+    update(deltaTime) {
+        // Move coin toward the player (increasing Z)
+        this.z += this.speed * deltaTime;
+        
+        // Rotate the coin around Y axis
+        this.rotationY += COIN_ROTATION_SPEED * deltaTime;
+        if (this.rotationY >= 360) {
+            this.rotationY -= 360;
+        }
+    }
+    
+    draw() {
+        modelMatrix.setTranslate(this.x, this.y, this.z);
+        modelMatrix.rotate(this.rotationY, 0, 1, 0); // Rotate around Y axis
+        gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
+        
+        initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
+        initAttributeVariable(gl, program.a_Color, this.colorBuffer);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.drawElements(gl.TRIANGLES, this.numIndices, gl.UNSIGNED_BYTE, 0);
+    }
+    
+    // Get collision bounds for detection
+    getBounds() {
+        return {
+            minX: this.x - COIN_RADIUS,
+            maxX: this.x + COIN_RADIUS,
+            minY: this.y - COIN_RADIUS,
+            maxY: this.y + COIN_RADIUS,
+            minZ: this.z - COIN_RADIUS,
+            maxZ: this.z + COIN_RADIUS,
             lane: this.lane
         };
     }
@@ -330,8 +473,20 @@ function initArrayBufferForLaterUse(gl, data, num, type) {
 // Game logic functions
 function spawnTrain() {
     const laneIndex = Math.floor(Math.random() * 3);
-    const speed = 5.0 + Math.random() * 3.0; // Units per second
-    trains.push(new Train(laneIndex, speed));
+    trains.push(new Train(laneIndex));
+}
+
+// Function to spawn a coin
+function spawnCoin() {
+    // Choose a random lane
+    const laneIndex = Math.floor(Math.random() * 3);
+    
+    // Choose a random position along the track (far from player)
+    // Use exactly the same starting position as trains for consistency
+    const zPosition = -LANE_LENGTH;
+    
+    // Create a new coin
+    coins.push(new Coin(laneIndex, zPosition));
 }
 
 function checkCollision() {
@@ -356,10 +511,55 @@ function checkCollision() {
     return false;
 }
 
+// Function to check for coin collisions
+function checkCoinCollision() {
+    if (!player) return;
+    
+    const playerBounds = player.getBounds();
+    
+    for (let i = coins.length - 1; i >= 0; i--) {
+        if (coins[i].collected) continue;
+        
+        const coinBounds = coins[i].getBounds();
+        
+        // Quick lane check first (optimization)
+        if (playerBounds.lane !== coinBounds.lane) continue;
+        
+        // Check for overlap in all dimensions
+        if (playerBounds.maxX > coinBounds.minX && playerBounds.minX < coinBounds.maxX &&
+            playerBounds.maxY > coinBounds.minY && playerBounds.minY < coinBounds.maxY &&
+            playerBounds.maxZ > coinBounds.minZ && playerBounds.minZ < coinBounds.maxZ) {
+            
+            // Collect the coin
+            coins[i].collected = true;
+            coinCount++;
+            
+            // Update UI
+            updateScoreUI();
+            
+            // Remove the coin
+            coins.splice(i, 1);
+        }
+    }
+}
+
+// Function to update score UI
+function updateScoreUI() {
+    if (scoreDiv) {
+        scoreDiv.textContent = `分數: ${score}`;
+    }
+    if (coinCountDiv) {
+        coinCountDiv.textContent = `金幣: ${coinCount}`;
+    }
+}
+
 function initGame() {
     score = 0;
+    coinCount = 0;
     trains = [];
+    coins = [];
     lastTrainSpawnTime = 0;
+    lastCoinSpawnTime = 0;
     trainSpawnInterval = 2.0;
     
     // Create lanes
@@ -370,6 +570,9 @@ function initGame() {
     
     // Create player in the middle lane
     player = new Player(1);
+    
+    // Update UI
+    updateScoreUI();
     
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     lastTimestamp = 0;
@@ -401,6 +604,8 @@ function main() {
     gameOverScreenDiv = document.getElementById('gameOverScreen');
     startButton = document.getElementById('startButton');
     restartButton = document.getElementById('restartButton');
+    scoreDiv = document.getElementById('score');
+    coinCountDiv = document.getElementById('coinCount');
     
     if (!canvas) {
         console.error('Failed to retrieve the <canvas> element');
@@ -468,9 +673,6 @@ function main() {
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
-    // Don't start game loop until button is pressed
-    canvas.style.display = 'none'; // Hide canvas until game starts
 }
 
 function tick(timestamp) {
@@ -504,6 +706,23 @@ function tick(timestamp) {
         }
     }
     
+    // Spawn coins
+    if (timestamp - lastCoinSpawnTime > coinSpawnInterval * 1000) {
+        spawnCoin();
+        lastCoinSpawnTime = timestamp;
+    }
+    
+    // Update and draw coins
+    for (let i = coins.length - 1; i >= 0; i--) {
+        coins[i].update(deltaTime);
+        coins[i].draw();
+        
+        // Remove coins that have passed the player
+        if (coins[i].z > 5) {
+            coins.splice(i, 1);
+        }
+    }
+    
     // Update and draw trains
     for (let i = trains.length - 1; i >= 0; i--) {
         trains[i].update(deltaTime);
@@ -513,6 +732,7 @@ function tick(timestamp) {
         if (trains[i].z > 5) {
             trains.splice(i, 1);
             score++;
+            updateScoreUI();
         }
     }
     
@@ -521,7 +741,10 @@ function tick(timestamp) {
         player.draw();
     }
     
-    // Check for collisions
+    // Check for coin collisions
+    checkCoinCollision();
+    
+    // Check for train collisions
     if (checkCollision()) {
         gameOver();
         return;
