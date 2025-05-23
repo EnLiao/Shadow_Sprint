@@ -11,6 +11,7 @@
         #startScreen { text-align: center; }
         #gameOverScreen { text-align: center; display: none; }
         #scoreContainer { position: absolute; top: 10px; left: 10px; font-size: 18px; color: white; z-index: 20; }
+        #cameraMode { position: absolute; top: 10px; right: 10px; font-size: 18px; color: white; z-index: 20; }
         button { padding: 10px 20px; font-size: 1.2em; cursor: pointer; margin-top: 10px; }
     </style>
 </head>
@@ -23,12 +24,15 @@
         <div id="score">分數: 0</div>
         <div id="coinCount">金幣: 0</div>
     </div>
+    
+    <div id="cameraMode">視角: 第三人稱</div>
 
     <div id="uiContainer">
         <div id="startScreen">
             <h1>小黑人逃亡記！</h1>
             <p>使用左右方向鍵移動</p>
             <p>收集金幣增加分數</p>
+            <p>按 V 鍵切換第一/第三人稱視角</p>
             <button id="startButton">開始遊戲</button>
         </div>
         <div id="gameOverScreen">
@@ -39,6 +43,7 @@
 
     <script src="cuon-matrix.js"></script>
     <script src="webgl-utils.js"></script>
+    <script src="camera_params.js"></script>
     <script src="WebGL.js"></script>
 </body>
 </html>

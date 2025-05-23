@@ -28,6 +28,10 @@ let canvas;
 let gameState = 'startScreen'; // 'startScreen', 'playing', 'gameOverScreen'
 let startScreenDiv, gameOverScreenDiv, startButton, restartButton;
 let scoreDiv, coinCountDiv; // UI elements for score and coin count
+let cameraModeDiv; // UI element for camera mode display
+
+// Camera state
+let cameraMode = CAMERA_MODE.THIRD_PERSON; // 默認為第三人稱視角
 
 // Game objects and parameters
 let player;
@@ -840,7 +844,7 @@ function checkCoinCollision() {
             coinCount++;
             
             // Update UI
-            updateScoreUI();
+            updateUI();
             
             // Remove the coin
             coins.splice(i, 1);
@@ -848,14 +852,58 @@ function checkCoinCollision() {
     }
 }
 
-// Function to update score UI
-function updateScoreUI() {
+// Function to update UI
+function updateUI() {
+    // Update score and coin count
     if (scoreDiv) {
         scoreDiv.textContent = `分數: ${score}`;
     }
     if (coinCountDiv) {
         coinCountDiv.textContent = `金幣: ${coinCount}`;
     }
+    
+    // Update camera mode display
+    if (cameraModeDiv) {
+        cameraModeDiv.textContent = `視角: ${cameraMode === CAMERA_MODE.FIRST_PERSON ? '第一人稱' : '第三人稱'}`;
+    }
+}
+
+// Function to toggle camera mode
+function toggleCameraMode() {
+    cameraMode = cameraMode === CAMERA_MODE.THIRD_PERSON ? 
+                 CAMERA_MODE.FIRST_PERSON : 
+                 CAMERA_MODE.THIRD_PERSON;
+    
+    if (player) {
+        if (cameraMode === CAMERA_MODE.FIRST_PERSON) {
+            viewMatrix.setLookAt(
+                player.x + FIRST_PERSON_CAMERA.offsetX,
+                player.y + FIRST_PERSON_CAMERA.offsetY,
+                player.z + FIRST_PERSON_CAMERA.offsetZ,
+                player.x + FIRST_PERSON_CAMERA.lookAtOffsetX,
+                player.y + FIRST_PERSON_CAMERA.lookAtOffsetY,
+                player.z + FIRST_PERSON_CAMERA.lookAtOffsetZ,
+                FIRST_PERSON_CAMERA.upX,
+                FIRST_PERSON_CAMERA.upY,
+                FIRST_PERSON_CAMERA.upZ
+            );
+        } else {
+            viewMatrix.setLookAt(
+                THIRD_PERSON_CAMERA.eyeX,
+                THIRD_PERSON_CAMERA.eyeY,
+                THIRD_PERSON_CAMERA.eyeZ,
+                THIRD_PERSON_CAMERA.lookAtX,
+                THIRD_PERSON_CAMERA.lookAtY,
+                THIRD_PERSON_CAMERA.lookAtZ,
+                THIRD_PERSON_CAMERA.upX,
+                THIRD_PERSON_CAMERA.upY,
+                THIRD_PERSON_CAMERA.upZ
+            );
+        }
+        gl.uniformMatrix4fv(program.u_ViewMatrix, false, viewMatrix.elements);
+    }
+    
+    updateUI();
 }
 
 function initGame() {
@@ -877,7 +925,7 @@ function initGame() {
     player = new Player(1);
     
     // Update UI
-    updateScoreUI();
+    updateUI();
     
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     lastTimestamp = 0;
@@ -949,16 +997,38 @@ function main() {
     }
     
     // Set up perspective projection matrix
-    projMatrix.setPerspective(45, canvas.width / canvas.height, 0.1, 100.0);
+    projMatrix.setPerspective(PROJECTION_PARAMS.fovy, canvas.width / canvas.height, PROJECTION_PARAMS.near, PROJECTION_PARAMS.far);
     gl.uniformMatrix4fv(program.u_ProjMatrix, false, projMatrix.elements);
     
-    // Set up view matrix - position camera to see both the lanes and player clearly
-    viewMatrix.setLookAt(
-        0, 10, 5,    // Eye position (elevated and slightly behind the player)
-        0, 0, -10,   // Look-at point (down the track)
-        0, 1, 0      // Up direction
-    );
-    gl.uniformMatrix4fv(program.u_ViewMatrix, false, viewMatrix.elements);
+    // Set initial camera mode to third person
+    updateCameraView();
+    
+    // Function to update camera view based on current mode
+    function updateCameraView() {
+        if (cameraMode === CAMERA_MODE.THIRD_PERSON) {
+            // Third person camera
+            viewMatrix.setLookAt(
+                THIRD_PERSON_CAMERA.eyeX, 
+                THIRD_PERSON_CAMERA.eyeY, 
+                THIRD_PERSON_CAMERA.eyeZ,
+                THIRD_PERSON_CAMERA.lookAtX, 
+                THIRD_PERSON_CAMERA.lookAtY, 
+                THIRD_PERSON_CAMERA.lookAtZ,
+                THIRD_PERSON_CAMERA.upX, 
+                THIRD_PERSON_CAMERA.upY, 
+                THIRD_PERSON_CAMERA.upZ
+            );
+        } else {
+            // First person camera - will be updated in tick() based on player position
+            // Initial setup just to have something valid
+            viewMatrix.setLookAt(
+                0, 2, 0,    // Will be overridden in tick()
+                0, 2, -10,  // Will be overridden in tick()
+                0, 1, 0     // Up direction
+            );
+        }
+        gl.uniformMatrix4fv(program.u_ViewMatrix, false, viewMatrix.elements);
+    }
     
     // Event listeners for UI
     startButton.addEventListener('click', startGame);
@@ -972,6 +1042,10 @@ function main() {
         }
         if (event.key === 'ArrowRight') {
             player.move('right');
+        }
+        // 視角切換 - 按 V 鍵
+        if (event.key === 'v' || event.key === 'V') {
+            toggleCameraMode();
         }
     });
     
@@ -996,6 +1070,38 @@ function tick(timestamp) {
     // Clear the canvas
     gl.clearColor(0.6, 0.8, 1.0, 1.0); // Sky blue background
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    // Update camera view based on current mode
+    if (player) {
+        if (cameraMode === CAMERA_MODE.FIRST_PERSON) {
+            // First person camera - position at player's head and look forward
+            viewMatrix.setLookAt(
+                player.x + FIRST_PERSON_CAMERA.offsetX,
+                player.y + FIRST_PERSON_CAMERA.offsetY,
+                player.z + FIRST_PERSON_CAMERA.offsetZ,
+                player.x + FIRST_PERSON_CAMERA.lookAtOffsetX,
+                player.y + FIRST_PERSON_CAMERA.lookAtOffsetY,
+                player.z + FIRST_PERSON_CAMERA.lookAtOffsetZ,
+                FIRST_PERSON_CAMERA.upX,
+                FIRST_PERSON_CAMERA.upY,
+                FIRST_PERSON_CAMERA.upZ
+            );
+        } else {
+            // Third person camera - use fixed position
+            viewMatrix.setLookAt(
+                THIRD_PERSON_CAMERA.eyeX,
+                THIRD_PERSON_CAMERA.eyeY,
+                THIRD_PERSON_CAMERA.eyeZ,
+                THIRD_PERSON_CAMERA.lookAtX,
+                THIRD_PERSON_CAMERA.lookAtY,
+                THIRD_PERSON_CAMERA.lookAtZ,
+                THIRD_PERSON_CAMERA.upX,
+                THIRD_PERSON_CAMERA.upY,
+                THIRD_PERSON_CAMERA.upZ
+            );
+        }
+        gl.uniformMatrix4fv(program.u_ViewMatrix, false, viewMatrix.elements);
+    }
     
     // Draw lanes
     for (let lane of lanes) {
