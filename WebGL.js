@@ -135,6 +135,133 @@ function createCube(width, height, depth, r, g, b) {
     return { vertices, colors, indices };
 }
 
+// Create a robot model (for player)
+function createRobot(width, height, depth) {
+    // Robot dimensions
+    const headSize = width * 0.7;
+    const bodyWidth = width;
+    const bodyHeight = height * 0.5;
+    const bodyDepth = depth * 0.6;
+    const limbWidth = width * 0.25;
+    const limbHeight = height * 0.4;
+    const limbDepth = depth * 0.25;
+    
+    // Colors - black with gray details
+    const mainColor = [0.1, 0.1, 0.1]; // Black
+    const detailColor = [0.3, 0.3, 0.3]; // Dark gray
+    const jointColor = [0.5, 0.5, 0.5]; // Medium gray
+    
+    // Vertices array for all parts
+    let vertices = [];
+    let colors = [];
+    let indices = [];
+    let indexOffset = 0;
+    
+    // Head - a cube at the top
+    const headY = bodyHeight + headSize/2;
+    const headCube = createCube(headSize, headSize, headSize, mainColor[0], mainColor[1], mainColor[2]);
+    
+    // Adjust head position
+    for (let i = 0; i < headCube.vertices.length; i += 3) {
+        vertices.push(headCube.vertices[i], headCube.vertices[i+1] + headY, headCube.vertices[i+2]);
+    }
+    colors.push(...headCube.colors);
+    
+    // Adjust indices for head
+    for (let i = 0; i < headCube.indices.length; i++) {
+        indices.push(headCube.indices[i] + indexOffset);
+    }
+    indexOffset += headCube.vertices.length / 3;
+    
+    // Body - a larger cube in the middle
+    const bodyCube = createCube(bodyWidth, bodyHeight, bodyDepth, detailColor[0], detailColor[1], detailColor[2]);
+    
+    // Adjust body position
+    for (let i = 0; i < bodyCube.vertices.length; i += 3) {
+        vertices.push(bodyCube.vertices[i], bodyCube.vertices[i+1] + bodyHeight/2, bodyCube.vertices[i+2]);
+    }
+    colors.push(...bodyCube.colors);
+    
+    // Adjust indices for body
+    for (let i = 0; i < bodyCube.indices.length; i++) {
+        indices.push(bodyCube.indices[i] + indexOffset);
+    }
+    indexOffset += bodyCube.vertices.length / 3;
+    
+    // Left arm
+    const leftArmCube = createCube(limbWidth, limbHeight, limbDepth, mainColor[0], mainColor[1], mainColor[2]);
+    const leftArmX = -(bodyWidth/2 + limbWidth/2);
+    const leftArmY = bodyHeight - limbHeight/2;
+    
+    // Adjust left arm position
+    for (let i = 0; i < leftArmCube.vertices.length; i += 3) {
+        vertices.push(leftArmCube.vertices[i] + leftArmX, leftArmCube.vertices[i+1] + leftArmY, leftArmCube.vertices[i+2]);
+    }
+    colors.push(...leftArmCube.colors);
+    
+    // Adjust indices for left arm
+    for (let i = 0; i < leftArmCube.indices.length; i++) {
+        indices.push(leftArmCube.indices[i] + indexOffset);
+    }
+    indexOffset += leftArmCube.vertices.length / 3;
+    
+    // Right arm
+    const rightArmCube = createCube(limbWidth, limbHeight, limbDepth, mainColor[0], mainColor[1], mainColor[2]);
+    const rightArmX = bodyWidth/2 + limbWidth/2;
+    const rightArmY = bodyHeight - limbHeight/2;
+    
+    // Adjust right arm position
+    for (let i = 0; i < rightArmCube.vertices.length; i += 3) {
+        vertices.push(rightArmCube.vertices[i] + rightArmX, rightArmCube.vertices[i+1] + rightArmY, rightArmCube.vertices[i+2]);
+    }
+    colors.push(...rightArmCube.colors);
+    
+    // Adjust indices for right arm
+    for (let i = 0; i < rightArmCube.indices.length; i++) {
+        indices.push(rightArmCube.indices[i] + indexOffset);
+    }
+    indexOffset += rightArmCube.vertices.length / 3;
+    
+    // Left leg
+    const leftLegCube = createCube(limbWidth, limbHeight, limbDepth, mainColor[0], mainColor[1], mainColor[2]);
+    const leftLegX = -bodyWidth/4;
+    const leftLegY = -limbHeight/2;
+    
+    // Adjust left leg position
+    for (let i = 0; i < leftLegCube.vertices.length; i += 3) {
+        vertices.push(leftLegCube.vertices[i] + leftLegX, leftLegCube.vertices[i+1] + leftLegY, leftLegCube.vertices[i+2]);
+    }
+    colors.push(...leftLegCube.colors);
+    
+    // Adjust indices for left leg
+    for (let i = 0; i < leftLegCube.indices.length; i++) {
+        indices.push(leftLegCube.indices[i] + indexOffset);
+    }
+    indexOffset += leftLegCube.vertices.length / 3;
+    
+    // Right leg
+    const rightLegCube = createCube(limbWidth, limbHeight, limbDepth, mainColor[0], mainColor[1], mainColor[2]);
+    const rightLegX = bodyWidth/4;
+    const rightLegY = -limbHeight/2;
+    
+    // Adjust right leg position
+    for (let i = 0; i < rightLegCube.vertices.length; i += 3) {
+        vertices.push(rightLegCube.vertices[i] + rightLegX, rightLegCube.vertices[i+1] + rightLegY, rightLegCube.vertices[i+2]);
+    }
+    colors.push(...rightLegCube.colors);
+    
+    // Adjust indices for right leg
+    for (let i = 0; i < rightLegCube.indices.length; i++) {
+        indices.push(rightLegCube.indices[i] + indexOffset);
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        colors: new Float32Array(colors),
+        indices: new Uint8Array(indices)
+    };
+}
+
 // Create a cylinder (for coins)
 function createCylinder(radius, height, segments, r, g, b) {
     const vertices = [];
@@ -254,7 +381,7 @@ class Lane {
     }
 }
 
-// Player class (3D version)
+// Player class (3D version with robot model and animation)
 class Player {
     constructor(initialLane) {
         this.currentLane = initialLane; // 0, 1, or 2
@@ -262,26 +389,204 @@ class Player {
         this.y = PLAYER_HEIGHT / 2; // Position player on the ground
         this.z = -2.0; // Fixed position on Z axis (closer to camera)
         
-        // Create a colored cube for the player
-        const cube = createCube(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH, 1.0, 0.2, 0.2); // Red cube
+        // Animation properties
+        this.runningTime = 0;
+        this.runningSpeed = 5.0; // Animation speed
+        this.legAngle = 0;
+        this.armAngle = 0;
+        this.isMoving = false;
+        this.lastLane = initialLane;
         
-        this.vertexBuffer = initArrayBufferForLaterUse(gl, cube.vertices, 3, gl.FLOAT);
-        this.colorBuffer = initArrayBufferForLaterUse(gl, cube.colors, 4, gl.FLOAT);
+        // Create a robot model for the player
+        const robot = createRobot(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DEPTH);
+        
+        this.vertexBuffer = initArrayBufferForLaterUse(gl, robot.vertices, 3, gl.FLOAT);
+        this.colorBuffer = initArrayBufferForLaterUse(gl, robot.colors, 4, gl.FLOAT);
         this.indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, cube.indices, gl.STATIC_DRAW);
-        this.numIndices = cube.indices.length;
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, robot.indices, gl.STATIC_DRAW);
+        this.numIndices = robot.indices.length;
+        
+        // Store original vertices for animation
+        this.originalVertices = new Float32Array(robot.vertices);
+        
+        // Calculate vertex indices for each body part based on the createRobot function
+        // Each cube has 24 vertices (4 vertices per face * 6 faces)
+        const verticesPerCube = 24 * 3; // 24 vertices * 3 coordinates per vertex
+        
+        // Head vertices (first cube in the model)
+        const headStart = 0;
+        const headEnd = verticesPerCube;
+        
+        // Body vertices (second cube)
+        const bodyStart = headEnd;
+        const bodyEnd = bodyStart + verticesPerCube;
+        
+        // Left arm vertices (third cube)
+        const leftArmStart = bodyEnd;
+        const leftArmEnd = leftArmStart + verticesPerCube;
+        
+        // Right arm vertices (fourth cube)
+        const rightArmStart = leftArmEnd;
+        const rightArmEnd = rightArmStart + verticesPerCube;
+        
+        // Left leg vertices (fifth cube)
+        const leftLegStart = rightArmEnd;
+        const leftLegEnd = leftLegStart + verticesPerCube;
+        
+        // Right leg vertices (sixth cube)
+        const rightLegStart = leftLegEnd;
+        const rightLegEnd = rightLegStart + verticesPerCube;
+        
+        // Store indices for animation
+        this.leftArmIndices = [];
+        this.rightArmIndices = [];
+        this.leftLegIndices = [];
+        this.rightLegIndices = [];
+        
+        // Populate the indices arrays
+        for (let i = leftArmStart; i < leftArmEnd; i += 3) {
+            this.leftArmIndices.push(i);
+        }
+        
+        for (let i = rightArmStart; i < rightArmEnd; i += 3) {
+            this.rightArmIndices.push(i);
+        }
+        
+        for (let i = leftLegStart; i < leftLegEnd; i += 3) {
+            this.leftLegIndices.push(i);
+        }
+        
+        for (let i = rightLegStart; i < rightLegEnd; i += 3) {
+            this.rightLegIndices.push(i);
+        }
+        
+        // Log the indices for debugging
+        console.log("Left Arm Indices:", this.leftArmIndices.length);
+        console.log("Right Arm Indices:", this.rightArmIndices.length);
+        console.log("Left Leg Indices:", this.leftLegIndices.length);
+        console.log("Right Leg Indices:", this.rightLegIndices.length);
     }
     
     move(direction) {
         if (gameState !== 'playing') return;
+        
+        this.lastLane = this.currentLane;
+        
         if (direction === 'left' && this.currentLane > 0) {
             this.currentLane--;
+            this.isMoving = true;
         }
         if (direction === 'right' && this.currentLane < 2) {
             this.currentLane++;
+            this.isMoving = true;
         }
         this.x = LANE_POSITIONS[this.currentLane];
+    }
+    
+    update(deltaTime) {
+        // Update running animation
+        this.runningTime += deltaTime;
+        
+        // Calculate leg angles for running animation
+        this.legAngle = Math.sin(this.runningTime * this.runningSpeed) * 30; // 30 degrees max angle
+        this.armAngle = -Math.sin(this.runningTime * this.runningSpeed) * 15; // 15 degrees max angle, opposite to legs
+        
+        // Update animation state
+        if (this.lastLane !== this.currentLane) {
+            this.isMoving = true;
+        } else {
+            this.isMoving = false;
+        }
+        this.lastLane = this.currentLane;
+        
+        // Apply animation to vertices
+        this.animateLegs();
+    }
+    
+    animateLegs() {
+        // Create a new array for the animated vertices
+        const animatedVertices = new Float32Array(this.originalVertices);
+        
+        // Apply rotation to left leg
+        const leftLegAngle = this.legAngle;
+        for (let i of this.leftLegIndices) {
+            // Get the vertex position relative to the leg pivot point
+            const x = this.originalVertices[i];
+            const y = this.originalVertices[i+1];
+            const z = this.originalVertices[i+2];
+            
+            // Apply rotation around X axis (for forward/backward movement)
+            const rad = leftLegAngle * Math.PI / 180;
+            const newY = y * Math.cos(rad) - z * Math.sin(rad);
+            const newZ = y * Math.sin(rad) + z * Math.cos(rad);
+            
+            // Update the vertex position
+            animatedVertices[i] = x;
+            animatedVertices[i+1] = newY;
+            animatedVertices[i+2] = newZ;
+        }
+        
+        // Apply rotation to right leg (opposite angle)
+        const rightLegAngle = -this.legAngle;
+        for (let i of this.rightLegIndices) {
+            // Get the vertex position relative to the leg pivot point
+            const x = this.originalVertices[i];
+            const y = this.originalVertices[i+1];
+            const z = this.originalVertices[i+2];
+            
+            // Apply rotation around X axis (for forward/backward movement)
+            const rad = rightLegAngle * Math.PI / 180;
+            const newY = y * Math.cos(rad) - z * Math.sin(rad);
+            const newZ = y * Math.sin(rad) + z * Math.cos(rad);
+            
+            // Update the vertex position
+            animatedVertices[i] = x;
+            animatedVertices[i+1] = newY;
+            animatedVertices[i+2] = newZ;
+        }
+        
+        // Apply rotation to left arm (synchronized with right leg)
+        const leftArmAngle = rightLegAngle * 0.7; // Slightly less rotation than legs
+        for (let i of this.leftArmIndices) {
+            // Get the vertex position relative to the arm pivot point
+            const x = this.originalVertices[i];
+            const y = this.originalVertices[i+1];
+            const z = this.originalVertices[i+2];
+            
+            // Apply rotation around X axis (for forward/backward movement)
+            const rad = leftArmAngle * Math.PI / 180;
+            const newY = y * Math.cos(rad) - z * Math.sin(rad);
+            const newZ = y * Math.sin(rad) + z * Math.cos(rad);
+            
+            // Update the vertex position
+            animatedVertices[i] = x;
+            animatedVertices[i+1] = newY;
+            animatedVertices[i+2] = newZ;
+        }
+        
+        // Apply rotation to right arm (synchronized with left leg)
+        const rightArmAngle = leftLegAngle * 0.7; // Slightly less rotation than legs
+        for (let i of this.rightArmIndices) {
+            // Get the vertex position relative to the arm pivot point
+            const x = this.originalVertices[i];
+            const y = this.originalVertices[i+1];
+            const z = this.originalVertices[i+2];
+            
+            // Apply rotation around X axis (for forward/backward movement)
+            const rad = rightArmAngle * Math.PI / 180;
+            const newY = y * Math.cos(rad) - z * Math.sin(rad);
+            const newZ = y * Math.sin(rad) + z * Math.cos(rad);
+            
+            // Update the vertex position
+            animatedVertices[i] = x;
+            animatedVertices[i+1] = newY;
+            animatedVertices[i+2] = newZ;
+        }
+        
+        // Update the vertex buffer with the animated vertices
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, animatedVertices, gl.DYNAMIC_DRAW);
     }
     
     draw() {
@@ -736,8 +1041,9 @@ function tick(timestamp) {
         }
     }
     
-    // Draw player
+    // Update and draw player
     if (player) {
+        player.update(deltaTime);
         player.draw();
     }
     
