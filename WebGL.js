@@ -6,12 +6,16 @@ var VSHADER_SOURCE = `
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
     uniform vec3 u_LightPosition;
+    uniform vec3 u_ViewPosition;
     uniform float u_Ka;
     uniform float u_Kd;
+    uniform float u_Ks;
+    uniform float u_Shininess;
     varying vec4 v_Color;
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
         vec3 diffuseLightColor = a_Color.rgb;
+        vec3 specularLightColor = vec3(1.0, 1.0, 1.0); 
 
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         vec3 ambient = ambientLightColor * u_Ka;
@@ -37,9 +41,18 @@ var VSHADER_SOURCE = `
         
         // 計算漫反射顏色
         vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
+
+        vec3 specular = vec3(0.0, 0.0, 0.0);
+        if(nDotL > 0.0) {
+            vec3 R = reflect(-lightDirection, normal);
+            // V: the vector, point to viewer       
+            vec3 V = normalize(u_ViewPosition - positionInWorld); 
+            float specAngle = clamp(dot(R, V), 0.0, 1.0);
+            specular = u_Ks * pow(specAngle, u_Shininess) * specularLightColor; 
+        }
         
         // 合併環境光與漫反射光
-        v_Color = vec4(ambient + diffuse, 1.0);
+        v_Color = vec4(ambient + diffuse + specular, 1.0);
     }
 `;
 
@@ -1064,8 +1077,11 @@ function main() {
     program.u_ViewMatrix = gl.getUniformLocation(program, 'u_ViewMatrix');
     program.u_ProjMatrix = gl.getUniformLocation(program, 'u_ProjMatrix');
     program.u_LightPosition = gl.getUniformLocation(program, 'u_LightPosition');
+    program.u_ViewPosition = gl.getUniformLocation(program, 'u_ViewPosition');
     program.u_Ka = gl.getUniformLocation(program, 'u_Ka'); 
     program.u_Kd = gl.getUniformLocation(program, 'u_Kd');
+    program.u_Ks = gl.getUniformLocation(program, 'u_Ks');
+    program.u_Shininess = gl.getUniformLocation(program, 'u_Shininess');
     
     if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1127,9 +1143,12 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
-    gl.uniform3f(program.u_LightPosition, 3.0, 10.0, -10.0);
+    gl.uniform3f(program.u_LightPosition, 3.0, 20.0, -10.0);
+    gl.uniform3f(program.u_ViewPosition, 0.0, 2.0, 5.0); // Camera position
     gl.uniform1f(program.u_Ka, 0.5);
     gl.uniform1f(program.u_Kd, 0.9);
+    gl.uniform1f(program.u_Ks, 0.5);
+    gl.uniform1f(program.u_Shininess, 32.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
