@@ -1,16 +1,28 @@
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
+    attribute vec4 a_Normal;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
+    uniform vec3 u_LightPosition;
     uniform float u_Ka;
+    uniform float u_Kd;
     varying vec4 v_Color;
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
+        vec3 diffuseLightColor = a_Color.rgb;
+
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         vec3 ambient = ambientLightColor * u_Ka;
-        v_Color = vec4( ambient , 1.0 );
+        
+        vec3 positionInWorld = (u_ModelMatrix * a_Position).xyz;
+        vec3 normal = normalize((u_ModelMatrix * a_Normal).xyz);
+        vec3 lightDirection = normalize(u_LightPosition - positionInWorld);
+        float nDotL = max(dot(lightDirection, normal), 0.0);
+        vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
+        
+        v_Color = vec4( ambient + diffuse , 1.0 );
     }
 `;
 
@@ -165,6 +177,7 @@ function createRobot(width, height, depth) {
     let vertices = [];
     let colors = [];
     let indices = [];
+    let normals = [];
     let indexOffset = 0;
     
     // Head - a cube at the top
@@ -174,6 +187,7 @@ function createRobot(width, height, depth) {
     // Adjust head position
     for (let i = 0; i < headCube.vertices.length; i += 3) {
         vertices.push(headCube.vertices[i], headCube.vertices[i+1] + headY, headCube.vertices[i+2]);
+        normals.push(headCube.normals[i], headCube.normals[i+1], headCube.normals[i+2]);
     }
     colors.push(...headCube.colors);
     
@@ -189,6 +203,7 @@ function createRobot(width, height, depth) {
     // Adjust body position
     for (let i = 0; i < bodyCube.vertices.length; i += 3) {
         vertices.push(bodyCube.vertices[i], bodyCube.vertices[i+1] + bodyHeight/2, bodyCube.vertices[i+2]);
+        normals.push(bodyCube.normals[i], bodyCube.normals[i+1], bodyCube.normals[i+2]);
     }
     colors.push(...bodyCube.colors);
     
@@ -206,6 +221,7 @@ function createRobot(width, height, depth) {
     // Adjust left arm position
     for (let i = 0; i < leftArmCube.vertices.length; i += 3) {
         vertices.push(leftArmCube.vertices[i] + leftArmX, leftArmCube.vertices[i+1] + leftArmY, leftArmCube.vertices[i+2]);
+        normals.push(leftArmCube.normals[i], leftArmCube.normals[i+1], leftArmCube.normals[i+2]);
     }
     colors.push(...leftArmCube.colors);
     
@@ -223,6 +239,7 @@ function createRobot(width, height, depth) {
     // Adjust right arm position
     for (let i = 0; i < rightArmCube.vertices.length; i += 3) {
         vertices.push(rightArmCube.vertices[i] + rightArmX, rightArmCube.vertices[i+1] + rightArmY, rightArmCube.vertices[i+2]);
+        normals.push(rightArmCube.normals[i], rightArmCube.normals[i+1], rightArmCube.normals[i+2]);
     }
     colors.push(...rightArmCube.colors);
     
@@ -240,6 +257,7 @@ function createRobot(width, height, depth) {
     // Adjust left leg position
     for (let i = 0; i < leftLegCube.vertices.length; i += 3) {
         vertices.push(leftLegCube.vertices[i] + leftLegX, leftLegCube.vertices[i+1] + leftLegY, leftLegCube.vertices[i+2]);
+        normals.push(leftLegCube.normals[i], leftLegCube.normals[i+1], leftLegCube.normals[i+2]);
     }
     colors.push(...leftLegCube.colors);
     
@@ -257,6 +275,7 @@ function createRobot(width, height, depth) {
     // Adjust right leg position
     for (let i = 0; i < rightLegCube.vertices.length; i += 3) {
         vertices.push(rightLegCube.vertices[i] + rightLegX, rightLegCube.vertices[i+1] + rightLegY, rightLegCube.vertices[i+2]);
+        normals.push(rightLegCube.normals[i], rightLegCube.normals[i+1], rightLegCube.normals[i+2]);
     }
     colors.push(...rightLegCube.colors);
     
@@ -268,6 +287,7 @@ function createRobot(width, height, depth) {
     return {
         vertices: new Float32Array(vertices),
         colors: new Float32Array(colors),
+        normals: new Float32Array(normals),
         indices: new Uint8Array(indices)
     };
 }
@@ -412,6 +432,7 @@ class Player {
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, robot.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, robot.colors, 4, gl.FLOAT);
+        this.normalBuffer = initArrayBufferForLaterUse(gl, robot.normals, 3, gl.FLOAT);
         this.indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, robot.indices, gl.STATIC_DRAW);
@@ -605,6 +626,7 @@ class Player {
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
+        initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
         
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         gl.drawElements(gl.TRIANGLES, this.numIndices, gl.UNSIGNED_BYTE, 0);
@@ -992,12 +1014,14 @@ function main() {
     // Get attribute and uniform locations
     program.a_Position = gl.getAttribLocation(program, 'a_Position');
     program.a_Color = gl.getAttribLocation(program, 'a_Color');
+    program.a_Normal = gl.getAttribLocation(program, 'a_Normal');
     program.u_ModelMatrix = gl.getUniformLocation(program, 'u_ModelMatrix');
     program.u_ViewMatrix = gl.getUniformLocation(program, 'u_ViewMatrix');
     program.u_ProjMatrix = gl.getUniformLocation(program, 'u_ProjMatrix');
     program.u_Ka = gl.getUniformLocation(program, 'u_Ka'); 
+    program.u_Kd = gl.getUniformLocation(program, 'u_Kd');
     
-    if (program.a_Position < 0 || program.a_Color < 0 || 
+    if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
         console.error('Failed to get the storage location of attribute or uniform variable');
         return;
@@ -1050,7 +1074,6 @@ function main() {
         if (event.key === 'ArrowRight') {
             player.move('right');
         }
-        // 視角切換 - 按 V 鍵
         if (event.key === 'v' || event.key === 'V') {
             toggleCameraMode();
         }
@@ -1058,7 +1081,9 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
-    gl.uniform1f(program.u_Ka, 0.2);
+    gl.uniform3f(program.u_LightPosition, 3.0, 3.0, 3.0);
+    gl.uniform1f(program.u_Ka, 0.3);
+    gl.uniform1f(program.u_Kd, 0.7);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
@@ -1151,7 +1176,7 @@ function tick(timestamp) {
         if (trains[i].z > 5) {
             trains.splice(i, 1);
             score++;
-            updateScoreUI();
+            //updateScoreUI();
         }
     }
     
