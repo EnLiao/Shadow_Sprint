@@ -1127,8 +1127,8 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
-    gl.uniform3f(program.u_LightPosition, 3.0, 3.0, -10.0);
-    gl.uniform1f(program.u_Ka, 0.3);
+    gl.uniform3f(program.u_LightPosition, 3.0, 10.0, -10.0);
+    gl.uniform1f(program.u_Ka, 0.5);
     gl.uniform1f(program.u_Kd, 0.9);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
