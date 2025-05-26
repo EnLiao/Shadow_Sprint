@@ -1,7 +1,7 @@
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
-    attribute vec4 a_Normal;
+    attribute vec3 a_Normal;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
@@ -16,13 +16,30 @@ var VSHADER_SOURCE = `
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         vec3 ambient = ambientLightColor * u_Ka;
         
+        // 計算世界座標中的頂點位置
         vec3 positionInWorld = (u_ModelMatrix * a_Position).xyz;
-        vec3 normal = normalize((u_ModelMatrix * a_Normal).xyz);
+        
+        // 計算法向量（需要特殊處理以保持垂直性）
+        // 使用法線矩陣（模型矩陣的逆轉置）來變換法向量
+        mat4 normalMatrix = mat4(
+            vec4(u_ModelMatrix[0].xyz, 0.0),
+            vec4(u_ModelMatrix[1].xyz, 0.0),
+            vec4(u_ModelMatrix[2].xyz, 0.0),
+            vec4(0.0, 0.0, 0.0, 1.0)
+        );
+        vec3 normal = normalize((normalMatrix * vec4(a_Normal, 0.0)).xyz);
+        
+        // 計算光線方向（從頂點指向光源）
         vec3 lightDirection = normalize(u_LightPosition - positionInWorld);
-        float nDotL = max(dot(lightDirection, normal), 0.0);
+        
+        // 計算漫反射係數（光線方向與法向量的點積）
+        float nDotL = max(dot(normal, lightDirection), 0.0);
+        
+        // 計算漫反射顏色
         vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
         
-        v_Color = vec4( ambient + diffuse , 1.0 );
+        // 合併環境光與漫反射光
+        v_Color = vec4(ambient + diffuse, 1.0);
     }
 `;
 
@@ -297,15 +314,18 @@ function createCylinder(radius, height, segments, r, g, b) {
     const vertices = [];
     const colors = [];
     const indices = [];
+    const normals = []; // 添加法向量陣列
     
     // Create the vertices for top and bottom faces
     // Center of top face
     vertices.push(0, height/2, 0);
     colors.push(r, g, b, 1.0);
+    normals.push(0, 1, 0); // 頂部中心點法向量指向上方
     
     // Center of bottom face
     vertices.push(0, -height/2, 0);
     colors.push(r, g, b, 1.0);
+    normals.push(0, -1, 0); // 底部中心點法向量指向下方
     
     // Create vertices for the perimeter
     for (let i = 0; i < segments; i++) {
@@ -316,18 +336,33 @@ function createCylinder(radius, height, segments, r, g, b) {
         // Top perimeter
         vertices.push(x, height/2, z);
         colors.push(r, g, b, 1.0);
+        normals.push(0, 1, 0); // 頂部邊緣法向量指向上方
         
         // Bottom perimeter
         vertices.push(x, -height/2, z);
         colors.push(r * 0.8, g * 0.8, b * 0.8, 1.0); // Slightly darker for bottom
+        normals.push(0, -1, 0); // 底部邊緣法向量指向下方
+        
+        // 側面法向量 - 指向外側
+        const nx = Math.cos(angle);
+        const nz = Math.sin(angle);
+        
+        // 為側面添加頂部和底部頂點（用於繪製側面）
+        vertices.push(x, height/2, z);
+        colors.push(r * 0.9, g * 0.9, b * 0.9, 1.0);
+        normals.push(nx, 0, nz);
+        
+        vertices.push(x, -height/2, z);
+        colors.push(r * 0.7, g * 0.7, b * 0.7, 1.0);
+        normals.push(nx, 0, nz);
     }
     
     // Create indices for top face (like a fan)
     for (let i = 0; i < segments; i++) {
         indices.push(
             0, // Center of top face
-            2 + i * 2, // Current top perimeter point
-            2 + ((i + 1) % segments) * 2 // Next top perimeter point
+            2 + i * 4, // Current top perimeter point
+            2 + ((i + 1) % segments) * 4 // Next top perimeter point
         );
     }
     
@@ -335,15 +370,15 @@ function createCylinder(radius, height, segments, r, g, b) {
     for (let i = 0; i < segments; i++) {
         indices.push(
             1, // Center of bottom face
-            3 + ((i + 1) % segments) * 2, // Next bottom perimeter point (reversed order)
-            3 + i * 2 // Current bottom perimeter point
+            3 + ((i + 1) % segments) * 4, // Next bottom perimeter point (reversed order)
+            3 + i * 4 // Current bottom perimeter point
         );
     }
     
     // Create indices for the side faces
     for (let i = 0; i < segments; i++) {
-        const current = 2 + i * 2;
-        const next = 2 + ((i + 1) % segments) * 2;
+        const current = 4 + i * 4;
+        const next = 4 + ((i + 1) % segments) * 4;
         
         // First triangle
         indices.push(
@@ -363,6 +398,7 @@ function createCylinder(radius, height, segments, r, g, b) {
     return {
         vertices: new Float32Array(vertices),
         colors: new Float32Array(colors),
+        normals: new Float32Array(normals),
         indices: new Uint8Array(indices)
     };
 }
@@ -397,8 +433,14 @@ class Lane {
             ...laneColor, ...laneColor, ...laneColor, ...laneColor
         ]);
         
+        // 添加法向量 - 跑道面向上方
+        this.normals = new Float32Array([
+            0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0
+        ]);
+        
         this.vertexBuffer = initArrayBufferForLaterUse(gl, this.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, this.colors, 4, gl.FLOAT);
+        this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT); // 初始化法向量緩衝區
     }
     
     draw() {
@@ -407,9 +449,12 @@ class Lane {
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
+        initAttributeVariable(gl, program.a_Normal, this.normalBuffer); // 設置法向量屬性
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 }
+
+// 其餘代碼保持不變...
 
 // Player class (3D version with robot model and animation)
 class Player {
@@ -1018,6 +1063,7 @@ function main() {
     program.u_ModelMatrix = gl.getUniformLocation(program, 'u_ModelMatrix');
     program.u_ViewMatrix = gl.getUniformLocation(program, 'u_ViewMatrix');
     program.u_ProjMatrix = gl.getUniformLocation(program, 'u_ProjMatrix');
+    program.u_LightPosition = gl.getUniformLocation(program, 'u_LightPosition');
     program.u_Ka = gl.getUniformLocation(program, 'u_Ka'); 
     program.u_Kd = gl.getUniformLocation(program, 'u_Kd');
     
@@ -1081,9 +1127,9 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
-    gl.uniform3f(program.u_LightPosition, 3.0, 3.0, 3.0);
+    gl.uniform3f(program.u_LightPosition, 3.0, 3.0, -10.0);
     gl.uniform1f(program.u_Ka, 0.3);
-    gl.uniform1f(program.u_Kd, 0.7);
+    gl.uniform1f(program.u_Kd, 0.9);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
