@@ -4,10 +4,13 @@ var VSHADER_SOURCE = `
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
+    uniform float u_Ka;
     varying vec4 v_Color;
     void main() {
+        vec3 ambientLightColor = a_Color.rgb;
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
-        v_Color = a_Color;
+        vec3 ambient = ambientLightColor * u_Ka;
+        v_Color = vec4( ambient , 1.0 );
     }
 `;
 
@@ -76,19 +79,9 @@ let lastTrainSpawnTime = 0;
 let coinSpawnInterval = 1.5; // seconds
 let lastCoinSpawnTime = 0;
 
-// 3D Cube vertices and colors
 function createCube(width, height, depth, r, g, b) {
-    // Create a cube
-    //    v6----- v5
-    //   /|      /|
-    //  v1------v0|
-    //  | |     | |
-    //  | |v7---|-|v4
-    //  |/      |/
-    //  v2------v3
     const w = width / 2, h = height / 2, d = depth / 2;
-    
-    // Vertex coordinates
+
     const vertices = new Float32Array([
         // Front face
         w, h, d,   -w, h, d,   -w, -h, d,   w, -h, d,
@@ -103,30 +96,43 @@ function createCube(width, height, depth, r, g, b) {
         // Left face
         -w, h, d,   -w, h, -d,   -w, -h, -d,   -w, -h, d
     ]);
-    
-    // Colors (slightly vary the shade for each face)
+
     const baseColor = [r, g, b];
     const colors = new Float32Array([
-        // Front face - base color
+        // Front
         ...baseColor, 1.0, ...baseColor, 1.0, ...baseColor, 1.0, ...baseColor, 1.0,
-        // Back face - darker
-        ...baseColor.map(c => c * 0.8), 1.0, ...baseColor.map(c => c * 0.8), 1.0, 
+        // Back
         ...baseColor.map(c => c * 0.8), 1.0, ...baseColor.map(c => c * 0.8), 1.0,
-        // Top face - lighter
+        ...baseColor.map(c => c * 0.8), 1.0, ...baseColor.map(c => c * 0.8), 1.0,
+        // Top
         ...baseColor.map(c => Math.min(c * 1.2, 1.0)), 1.0, ...baseColor.map(c => Math.min(c * 1.2, 1.0)), 1.0,
         ...baseColor.map(c => Math.min(c * 1.2, 1.0)), 1.0, ...baseColor.map(c => Math.min(c * 1.2, 1.0)), 1.0,
-        // Bottom face - darker
+        // Bottom
         ...baseColor.map(c => c * 0.7), 1.0, ...baseColor.map(c => c * 0.7), 1.0,
         ...baseColor.map(c => c * 0.7), 1.0, ...baseColor.map(c => c * 0.7), 1.0,
-        // Right face - slightly lighter
+        // Right
         ...baseColor.map(c => Math.min(c * 1.1, 1.0)), 1.0, ...baseColor.map(c => Math.min(c * 1.1, 1.0)), 1.0,
         ...baseColor.map(c => Math.min(c * 1.1, 1.0)), 1.0, ...baseColor.map(c => Math.min(c * 1.1, 1.0)), 1.0,
-        // Left face - slightly darker
+        // Left
         ...baseColor.map(c => c * 0.9), 1.0, ...baseColor.map(c => c * 0.9), 1.0,
         ...baseColor.map(c => c * 0.9), 1.0, ...baseColor.map(c => c * 0.9), 1.0
     ]);
-    
-    // Indices of the vertices
+
+    const normals = new Float32Array([
+        // Front face normals (0, 0, 1)
+        0, 0, 1,   0, 0, 1,   0, 0, 1,   0, 0, 1,
+        // Back face normals (0, 0, -1)
+        0, 0, -1,  0, 0, -1,  0, 0, -1,  0, 0, -1,
+        // Top face normals (0, 1, 0)
+        0, 1, 0,   0, 1, 0,   0, 1, 0,   0, 1, 0,
+        // Bottom face normals (0, -1, 0)
+        0, -1, 0,  0, -1, 0,  0, -1, 0,  0, -1, 0,
+        // Right face normals (1, 0, 0)
+        1, 0, 0,   1, 0, 0,   1, 0, 0,   1, 0, 0,
+        // Left face normals (-1, 0, 0)
+        -1, 0, 0,  -1, 0, 0,  -1, 0, 0,  -1, 0, 0
+    ]);
+
     const indices = new Uint8Array([
         0, 1, 2,   0, 2, 3,    // front
         4, 5, 6,   4, 6, 7,    // back
@@ -135,8 +141,8 @@ function createCube(width, height, depth, r, g, b) {
         16, 17, 18, 16, 18, 19, // right
         20, 21, 22, 20, 22, 23  // left
     ]);
-    
-    return { vertices, colors, indices };
+
+    return { vertices, colors, normals, indices };
 }
 
 // Create a robot model (for player)
@@ -989,6 +995,7 @@ function main() {
     program.u_ModelMatrix = gl.getUniformLocation(program, 'u_ModelMatrix');
     program.u_ViewMatrix = gl.getUniformLocation(program, 'u_ViewMatrix');
     program.u_ProjMatrix = gl.getUniformLocation(program, 'u_ProjMatrix');
+    program.u_Ka = gl.getUniformLocation(program, 'u_Ka'); 
     
     if (program.a_Position < 0 || program.a_Color < 0 || 
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1051,6 +1058,7 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
+    gl.uniform1f(program.u_Ka, 0.2);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
