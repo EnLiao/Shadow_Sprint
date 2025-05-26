@@ -1,21 +1,51 @@
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
+    attribute vec3 a_Normal;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
+    uniform mat4 u_NormalMatrix;
     varying vec4 v_Color;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
     void main() {
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         v_Color = a_Color;
+        v_Normal = normalize(vec3(u_NormalMatrix * vec4(a_Normal, 0.0)));
+        v_Position = vec3(u_ModelMatrix * a_Position);
     }
 `;
 
 var FSHADER_SOURCE = `
     precision mediump float;
     varying vec4 v_Color;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
+
+    uniform vec3 u_LightPosition;
+    uniform vec3 u_LightColor;
+    uniform vec3 u_AmbientColor;
+    uniform vec3 u_ViewPosition;
+    uniform float u_Shininess;
+
     void main() {
-        gl_FragColor = v_Color;
+        // Ambient
+        vec3 ambient = u_AmbientColor * v_Color.rgb;
+
+        // Diffuse
+        vec3 norm = normalize(v_Normal);
+        vec3 lightDir = normalize(u_LightPosition - v_Position);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = u_LightColor * diff * v_Color.rgb;
+
+        // Specular
+        vec3 viewDir = normalize(u_ViewPosition - v_Position);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_Shininess);
+        vec3 specular = u_LightColor * spec;
+
+        gl_FragColor = vec4(ambient + diffuse + specular, v_Color.a);
     }
 `;
 
