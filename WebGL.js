@@ -12,6 +12,8 @@ var VSHADER_SOURCE = `
     uniform float u_Ks;
     uniform float u_Shininess;
     varying vec4 v_Color;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
         vec3 diffuseLightColor = a_Color.rgb;
@@ -59,8 +61,32 @@ var VSHADER_SOURCE = `
 var FSHADER_SOURCE = `
     precision mediump float;
     varying vec4 v_Color;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
+
+    uniform vec3 u_LightPosition;
+    uniform vec3 u_LightColor;
+    uniform vec3 u_AmbientColor;
+    uniform vec3 u_ViewPosition;
+    uniform float u_Shininess;
+
     void main() {
-        gl_FragColor = v_Color;
+        // Ambient
+        vec3 ambient = u_AmbientColor * v_Color.rgb;
+
+        // Diffuse
+        vec3 norm = normalize(v_Normal);
+        vec3 lightDir = normalize(u_LightPosition - v_Position);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = u_LightColor * diff * v_Color.rgb;
+
+        // Specular
+        vec3 viewDir = normalize(u_ViewPosition - v_Position);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_Shininess);
+        vec3 specular = u_LightColor * spec;
+
+        gl_FragColor = vec4(ambient + diffuse + specular, v_Color.a);
     }
 `;
 
