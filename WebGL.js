@@ -1,3 +1,6 @@
+let skyboxProgram;
+let skybox;
+
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
@@ -20,11 +23,8 @@ var VSHADER_SOURCE = `
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         vec3 ambient = ambientLightColor * u_Ka;
         
-        // 計算世界座標中的頂點位置
         vec3 positionInWorld = (u_ModelMatrix * a_Position).xyz;
         
-        // 計算法向量（需要特殊處理以保持垂直性）
-        // 使用法線矩陣（模型矩陣的逆轉置）來變換法向量
         mat4 normalMatrix = mat4(
             vec4(u_ModelMatrix[0].xyz, 0.0),
             vec4(u_ModelMatrix[1].xyz, 0.0),
@@ -33,13 +33,10 @@ var VSHADER_SOURCE = `
         );
         vec3 normal = normalize((normalMatrix * vec4(a_Normal, 0.0)).xyz);
         
-        // 計算光線方向（從頂點指向光源）
         vec3 lightDirection = normalize(u_LightPosition - positionInWorld);
         
-        // 計算漫反射係數（光線方向與法向量的點積）
         float nDotL = max(dot(normal, lightDirection), 0.0);
         
-        // 計算漫反射顏色
         vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
 
         vec3 specular = vec3(0.0, 0.0, 0.0);
@@ -64,6 +61,39 @@ var FSHADER_SOURCE = `
     }
 `;
 
+var SKYBOX_VSHADER_SOURCE = `
+    attribute vec4 a_Position;
+    attribute vec2 a_TexCoord;
+    uniform mat4 u_ViewMatrix;
+    uniform mat4 u_ProjMatrix;
+    varying vec2 v_TexCoord;
+    
+    void main() {
+        mat4 viewMatrixWithoutTranslation = mat4(
+            vec4(u_ViewMatrix[0].xyz, 0.0),
+            vec4(u_ViewMatrix[1].xyz, 0.0),
+            vec4(u_ViewMatrix[2].xyz, 0.0),
+            vec4(0.0, 0.0, 0.0, 1.0)
+        );
+        
+        gl_Position = u_ProjMatrix * viewMatrixWithoutTranslation * a_Position;
+        
+        gl_Position.z = gl_Position.w;
+        
+        v_TexCoord = a_TexCoord;
+    }
+`;
+
+var SKYBOX_FSHADER_SOURCE = `
+    precision mediump float;
+    uniform sampler2D u_Sampler;
+    varying vec2 v_TexCoord;
+    
+    void main() {
+        gl_FragColor = texture2D(u_Sampler, v_TexCoord);
+    }
+`;
+
 // Global WebGL variables
 let gl;
 let program;
@@ -76,7 +106,7 @@ let scoreDiv, coinCountDiv; // UI elements for score and coin count
 let cameraModeDiv; // UI element for camera mode display
 
 // Camera state
-let cameraMode = CAMERA_MODE.THIRD_PERSON; // 默認為第三人稱視角
+let cameraMode = CAMERA_MODE.THIRD_PERSON;
 
 // Game objects and parameters
 let player;
@@ -120,6 +150,212 @@ let trainSpawnInterval = 2.0; // seconds
 let lastTrainSpawnTime = 0;
 let coinSpawnInterval = 1.5; // seconds
 let lastCoinSpawnTime = 0;
+
+function createSkybox(size) {
+    const vertices = new Float32Array([
+        // 正面 (z正方向) - posz.jpg
+        -size,  size, size,    // 左上
+         size,  size, size,    // 右上
+        -size, -size, size,    // 左下
+         size, -size, size,    // 右下
+        
+        // 背面 (z負方向) - negz.jpg
+         size,  size, -size,   // 右上
+        -size,  size, -size,   // 左上
+         size, -size, -size,   // 右下
+        -size, -size, -size,   // 左下
+        
+        // 頂面 (y正方向) - posy.jpg
+        -size, size,  size,    // 左前
+         size, size,  size,    // 右前
+        -size, size, -size,    // 左後
+         size, size, -size,    // 右後
+        
+        // 底面 (y負方向) - negy.jpg
+        -size, -size,  size,   // 左前
+         size, -size,  size,   // 右前
+        -size, -size, -size,   // 左後
+         size, -size, -size,   // 右後
+        
+        // 右面 (x正方向) - posx.jpg
+        size,  size,  size,    // 右上前
+        size,  size, -size,    // 右上後
+        size, -size,  size,    // 右下前
+        size, -size, -size,    // 右下後
+        
+        // 左面 (x負方向) - negx.jpg
+        -size,  size, -size,   // 左上後
+        -size,  size,  size,   // 左上前
+        -size, -size, -size,   // 左下後
+        -size, -size,  size    // 左下前
+    ]);
+    
+    const texCoords = new Float32Array([
+        // 正面 (z正方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0,
+        
+        // 背面 (z負方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0,
+        
+        // 頂面 (y正方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0,
+        
+        // 底面 (y負方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0,
+        
+        // 右面 (x正方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0,
+        
+        // 左面 (x負方向)
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        1.0, 1.0
+    ]);
+    
+    const indices = new Uint8Array([
+        0, 1, 2,    1, 3, 2,    // 正面
+        4, 5, 6,    5, 7, 6,    // 背面
+        8, 9, 10,   9, 11, 10,  // 頂面
+        12, 13, 14, 13, 15, 14, // 底面
+        16, 17, 18, 17, 19, 18, // 右面
+        20, 21, 22, 21, 23, 22  // 左面
+    ]);
+    
+    return {
+        vertices: vertices,
+        texCoords: texCoords,
+        indices: indices
+    };
+}
+
+function loadSkyboxTextures(gl, program) {
+    const textures = {
+        posx: gl.createTexture(),
+        negx: gl.createTexture(),
+        posy: gl.createTexture(),
+        negy: gl.createTexture(),
+        posz: gl.createTexture(),
+        negz: gl.createTexture()
+    };
+    
+    let loadedTextures = 0;
+    
+    function onTextureLoaded() {
+        loadedTextures++;
+        if (loadedTextures === 6) {
+            console.log("所有天空盒紋理加載完成");
+        }
+    }
+    
+    loadTexture(gl, textures.posx, 'skybox/posx.jpg', onTextureLoaded);
+    loadTexture(gl, textures.negx, 'skybox/negx.jpg', onTextureLoaded);
+    loadTexture(gl, textures.posy, 'skybox/posy.jpg', onTextureLoaded);
+    loadTexture(gl, textures.negy, 'skybox/negy.jpg', onTextureLoaded);
+    loadTexture(gl, textures.posz, 'skybox/posz.jpg', onTextureLoaded);
+    loadTexture(gl, textures.negz, 'skybox/negz.jpg', onTextureLoaded);
+    
+    return textures;
+}
+
+function loadTexture(gl, texture, url, callback) {
+    const image = new Image();
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+        // 上下翻轉圖像，因為WebGL的紋理座標系與圖像座標系不同
+        //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        
+        if (callback) callback();
+    };
+    
+    image.onerror = function() {
+        console.error('無法加載紋理：' + url);
+    };
+    image.src = url;
+}
+
+class Skybox {
+    constructor(gl, skyboxProgram, viewMatrix, projMatrix) {
+        const skyboxSize = 20.0; 
+        const skyboxGeometry = createSkybox(skyboxSize);
+        
+        this.vertexBuffer = initArrayBufferForLaterUse(gl, skyboxGeometry.vertices, 3, gl.FLOAT);
+        this.texCoordBuffer = initArrayBufferForLaterUse(gl, skyboxGeometry.texCoords, 2, gl.FLOAT);
+        
+        this.indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, skyboxGeometry.indices, gl.STATIC_DRAW);
+        this.numIndices = skyboxGeometry.indices.length;
+        
+        this.textures = loadSkyboxTextures(gl, skyboxProgram);
+        
+        this.program = skyboxProgram;
+        this.viewMatrix = viewMatrix;
+        this.projMatrix = projMatrix;
+    }
+    
+    draw(gl) {
+        const currentProgram = gl.getParameter(gl.CURRENT_PROGRAM);
+        const depthTestEnabled = gl.isEnabled(gl.DEPTH_TEST);
+        
+        gl.useProgram(this.program);
+        
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'u_ViewMatrix'), false, this.viewMatrix.elements);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'u_ProjMatrix'), false, this.projMatrix.elements);
+        
+        initAttributeVariable(gl, gl.getAttribLocation(this.program, 'a_Position'), this.vertexBuffer);
+        initAttributeVariable(gl, gl.getAttribLocation(this.program, 'a_TexCoord'), this.texCoordBuffer);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        
+        gl.depthMask(false);
+        
+        const faceNames = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'];
+        
+        for (let i = 0; i < 6; i++) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.textures[faceNames[i]]);
+            gl.uniform1i(gl.getUniformLocation(this.program, 'u_Sampler'), 0);
+            
+            const startIndex = i * 6; 
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, startIndex);
+        }
+        
+        gl.depthMask(true);
+        
+        if (depthTestEnabled) {
+            gl.enable(gl.DEPTH_TEST);
+        } else {
+            gl.disable(gl.DEPTH_TEST);
+        }
+        gl.useProgram(currentProgram);
+    }
+}
 
 function createCube(width, height, depth, r, g, b) {
     const w = width / 2, h = height / 2, d = depth / 2;
@@ -1068,7 +1304,15 @@ function main() {
         return;
     }
     gl.useProgram(program);
-    
+
+    skyboxProgram = compileShader(gl, SKYBOX_VSHADER_SOURCE, SKYBOX_FSHADER_SOURCE);
+    if (!skyboxProgram) {
+        console.error('Failed to compile or link skybox shaders.');
+        return;
+    }
+
+    skybox = new Skybox(gl, skyboxProgram, viewMatrix, projMatrix);
+
     // Get attribute and uniform locations
     program.a_Position = gl.getAttribLocation(program, 'a_Position');
     program.a_Color = gl.getAttribLocation(program, 'a_Color');
@@ -1158,16 +1402,23 @@ function tick(timestamp) {
         animationFrameId = null;
         return;
     }
+
+    gl.clearColor(0.6, 0.8, 1.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(false);
+
+    skybox.draw(gl); 
+    gl.depthMask(true);
+    gl.depthFunc(gl.LESS);
+
     
     animationFrameId = requestAnimationFrame(tick);
     
     // Calculate delta time for smooth animation
     const deltaTime = timestamp && lastTimestamp ? (timestamp - lastTimestamp) / 1000 : 0.016; // in seconds
     lastTimestamp = timestamp;
-    
-    // Clear the canvas
-    gl.clearColor(0.6, 0.8, 1.0, 1.0); // Sky blue background
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
     // Update camera view based on current mode
     if (player) {
