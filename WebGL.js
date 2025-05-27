@@ -5,6 +5,7 @@ var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
     attribute vec3 a_Normal;
+    attribute vec2 a_TexCoord;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
@@ -15,6 +16,9 @@ var VSHADER_SOURCE = `
     uniform float u_Ks;
     uniform float u_Shininess;
     varying vec4 v_Color;
+    varying vec2 v_TexCoord;   
+    varying float v_UseTexture;
+    
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
         vec3 diffuseLightColor = a_Color.rgb;
@@ -48,16 +52,29 @@ var VSHADER_SOURCE = `
             specular = u_Ks * pow(specAngle, u_Shininess) * specularLightColor; 
         }
         
-        // 合併環境光與漫反射光
         v_Color = vec4(ambient + diffuse + specular, 1.0);
+        
+        v_TexCoord = a_TexCoord;
+        
+        v_UseTexture = 1.0;
     }
 `;
 
 var FSHADER_SOURCE = `
     precision mediump float;
+    uniform sampler2D u_Sampler;  
+    uniform bool u_UseTexture;    
     varying vec4 v_Color;
+    varying vec2 v_TexCoord;     
+    varying float v_UseTexture; 
+    
     void main() {
-        gl_FragColor = v_Color;
+        if (u_UseTexture) {
+            vec4 texColor = texture2D(u_Sampler, v_TexCoord);
+            gl_FragColor = texColor * v_Color;
+        } else {
+            gl_FragColor = v_Color;
+        }
     }
 `;
 
@@ -150,6 +167,40 @@ let trainSpawnInterval = 2.0; // seconds
 let lastTrainSpawnTime = 0;
 let coinSpawnInterval = 1.5; // seconds
 let lastCoinSpawnTime = 0;
+
+function loadTextureForObject(gl, url, callback) {
+    const texture = gl.createTexture();
+    const image = new Image();
+    
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+        // 上下翻轉圖像
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        
+        console.log('紋理載入成功：' + url);
+        
+        if (callback) callback(texture);
+    };
+    
+    image.onerror = function() {
+        console.error('無法加載紋理：' + url);
+        if (callback) callback(null);
+    };
+    
+    image.src = url;
+    
+    return texture;
+}
 
 function createSkybox(size) {
     const vertices = new Float32Array([
@@ -285,8 +336,8 @@ function loadTexture(gl, texture, url, callback) {
         
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
         
         gl.bindTexture(gl.TEXTURE_2D, null);
         
@@ -563,7 +614,7 @@ function createCylinder(radius, height, segments, r, g, b) {
     const vertices = [];
     const colors = [];
     const indices = [];
-    const normals = []; // 添加法向量陣列
+    const normals = [];
     
     // Create the vertices for top and bottom faces
     // Center of top face
@@ -654,12 +705,16 @@ function createCylinder(radius, height, segments, r, g, b) {
 
 // Lane class (3D version)
 class Lane {
-    constructor(position) {
+    constructor(position, textureUrl) {
+        console.log('[Lane] this:', this, 'textureUrl:', textureUrl);
+
         this.x = position;
         this.y = 0;
         this.z = -LANE_LENGTH / 2; // Center of the lane
         this.width = LANE_WIDTH;
         this.length = LANE_LENGTH;
+        this.texture = null;
+        this.hasTexture = false;
         
         // Create lane geometry (a long rectangle)
         const w = this.width / 2;
@@ -671,6 +726,16 @@ class Lane {
              w, 0, -l,  // bottom right
             -w, 0,  l,  // top left
              w, 0,  l   // top right
+        ]);
+        
+        const repeatX = 1.0;      
+        const repeatZ = 5.0;  
+        
+        this.texCoords = new Float32Array([
+            0.0, 0.0,              // 左下
+            repeatX, 0.0,          // 右下
+            0.0, repeatZ,          // 左上
+            repeatX, repeatZ       // 右上
         ]);
         
         // Alternate lane colors for better visibility
@@ -689,7 +754,19 @@ class Lane {
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, this.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, this.colors, 4, gl.FLOAT);
-        this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT); // 初始化法向量緩衝區
+        this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT);
+        this.texCoordBuffer = initArrayBufferForLaterUse(gl, this.texCoords, 2, gl.FLOAT);
+        
+        if (textureUrl) {
+            const self = this;
+            this.texture = loadTextureForObject(gl, textureUrl, function(texture) {
+                if (texture) {
+                    self.hasTexture = true;
+                    self.texture = texture;
+                    console.log('Lane texture 載入完成');
+                }
+            });
+        }
     }
     
     draw() {
@@ -698,12 +775,32 @@ class Lane {
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
-        initAttributeVariable(gl, program.a_Normal, this.normalBuffer); // 設置法向量屬性
+        initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
+        
+        if (program.a_TexCoord !== undefined && program.a_TexCoord !== -1) {
+            initAttributeVariable(gl, program.a_TexCoord, this.texCoordBuffer);
+            
+            if (this.hasTexture && this.texture) {
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                console.log('BOUND TEX2D =', gl.getParameter(gl.TEXTURE_BINDING_2D));
+                gl.uniform1i(program.u_Sampler, 0);
+                gl.uniform1i(program.u_UseTexture, 1);
+            } else {
+                // 不使用紋理
+                //console.log('No texture for lane, using color only');
+                gl.uniform1i(program.u_UseTexture, 0);
+            }
+        }
+        
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        
+        if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
+            gl.uniform1i(program.u_UseTexture, 0);
+        }
+        console.log(gl.getParameter(gl.ACTIVE_TEXTURE))
     }
 }
-
-// 其餘代碼保持不變...
 
 // Player class (3D version with robot model and animation)
 class Player {
@@ -1238,10 +1335,10 @@ function initGame() {
     trainSpawnInterval = 2.0;
     
     // Create lanes
-    lanes = [];
+    /*lanes = [];
     for (let i = 0; i < 3; i++) {
         lanes.push(new Lane(LANE_POSITIONS[i]));
-    }
+    }*/
     
     // Create player in the middle lane
     player = new Player(1);
@@ -1326,6 +1423,9 @@ function main() {
     program.u_Kd = gl.getUniformLocation(program, 'u_Kd');
     program.u_Ks = gl.getUniformLocation(program, 'u_Ks');
     program.u_Shininess = gl.getUniformLocation(program, 'u_Shininess');
+    program.a_TexCoord = gl.getAttribLocation(program, 'a_TexCoord');
+    program.u_Sampler = gl.getUniformLocation(program, 'u_Sampler');
+    program.u_UseTexture = gl.getUniformLocation(program, 'u_UseTexture');
     
     if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1393,6 +1493,11 @@ function main() {
     gl.uniform1f(program.u_Kd, 0.9);
     gl.uniform1f(program.u_Ks, 0.9);
     gl.uniform1f(program.u_Shininess, 32.0);
+    lanes = [
+        new Lane(LANE_POSITIONS[0], 'floor.png'),
+        new Lane(LANE_POSITIONS[1], 'floor.png'),
+        new Lane(LANE_POSITIONS[2], 'floor.png')
+    ];
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
