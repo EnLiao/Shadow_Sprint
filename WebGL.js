@@ -1,5 +1,3 @@
-console.log('=== WebGL.js loaded ===');
-
 let skyboxProgram;
 let skybox;
 
@@ -186,8 +184,8 @@ function loadTextureForObject(gl, url, callback) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
         
         // 設置紋理參數
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         
@@ -344,8 +342,8 @@ function loadTexture(gl, texture, url, callback) {
         
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
         
         gl.bindTexture(gl.TEXTURE_2D, null);
         
@@ -738,7 +736,7 @@ class Lane {
         
         // 紋理座標 - 根據跑道長度調整重複次數
         const repeatX = 1.0;       // 橫向重複次數
-        const repeatZ = 10.0;      // 縱向重複次數（跑道方向）
+        const repeatZ = 5.0;      // 縱向重複次數（跑道方向）
         
         this.texCoords = new Float32Array([
             0.0, 0.0,              // 左下
