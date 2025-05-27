@@ -5,6 +5,7 @@ var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
     attribute vec3 a_Normal;
+    attribute vec2 a_TexCoord;  // 新增：紋理座標
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
@@ -15,6 +16,9 @@ var VSHADER_SOURCE = `
     uniform float u_Ks;
     uniform float u_Shininess;
     varying vec4 v_Color;
+    varying vec2 v_TexCoord;    // 新增：傳遞給片段著色器的紋理座標
+    varying float v_UseTexture; // 新增：是否使用紋理的標誌
+    
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
         vec3 diffuseLightColor = a_Color.rgb;
@@ -50,14 +54,26 @@ var VSHADER_SOURCE = `
         
         // 合併環境光與漫反射光
         v_Color = vec4(ambient + diffuse + specular, 1.0);
+        
+        v_TexCoord = a_TexCoord;
+        
+        // 檢查是否有有效的紋理座標（大於0表示使用紋理）
+        v_UseTexture = 1.0;
     }
 `;
 
 var FSHADER_SOURCE = `
     precision mediump float;
+    uniform sampler2D u_Sampler;  // 紋理取樣器
+    uniform bool u_UseTexture;    // 是否使用紋理的標誌
     varying vec4 v_Color;
+    varying vec2 v_TexCoord;      // 從頂點著色器傳來的紋理座標
+    varying float v_UseTexture;   // 從頂點著色器傳來的紋理使用標誌
+    
     void main() {
-        gl_FragColor = v_Color;
+        vec4 texColor = texture2D(u_Sampler, v_TexCoord);
+        gl_FragColor = texColor * v_Color;
+        //gl_FragColor = v_Color;
     }
 `;
 
@@ -150,6 +166,44 @@ let trainSpawnInterval = 2.0; // seconds
 let lastTrainSpawnTime = 0;
 let coinSpawnInterval = 1.5; // seconds
 let lastCoinSpawnTime = 0;
+
+function loadTextureForObject(gl, url, callback) {
+    const texture = gl.createTexture();
+    const image = new Image();
+    
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+        // 上下翻轉圖像，因為WebGL的紋理座標系與圖像座標系不同
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        
+        // 將圖像數據傳給WebGL
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        
+        // 設置紋理參數
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); // 使用重複模式
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); // 使用重複模式
+        
+        // 解除綁定
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        
+        console.log('紋理載入成功：' + url);
+        
+        if (callback) callback(texture);
+    };
+    
+    image.onerror = function() {
+        console.error('無法加載紋理：' + url);
+        if (callback) callback(null);
+    };
+    
+    // 開始加載圖像
+    image.src = url;
+    
+    return texture;
+}
 
 function createSkybox(size) {
     const vertices = new Float32Array([
@@ -654,12 +708,14 @@ function createCylinder(radius, height, segments, r, g, b) {
 
 // Lane class (3D version)
 class Lane {
-    constructor(position) {
+    constructor(position, textureUrl) {
         this.x = position;
         this.y = 0;
         this.z = -LANE_LENGTH / 2; // Center of the lane
         this.width = LANE_WIDTH;
         this.length = LANE_LENGTH;
+        this.texture = null;
+        this.hasTexture = false;
         
         // Create lane geometry (a long rectangle)
         const w = this.width / 2;
@@ -671,6 +727,17 @@ class Lane {
              w, 0, -l,  // bottom right
             -w, 0,  l,  // top left
              w, 0,  l   // top right
+        ]);
+        
+        // 紋理座標 - 根據跑道長度調整重複次數
+        const repeatX = 1.0;       // 橫向重複次數
+        const repeatZ = 10.0;      // 縱向重複次數（跑道方向）
+        
+        this.texCoords = new Float32Array([
+            0.0, 0.0,              // 左下
+            repeatX, 0.0,          // 右下
+            0.0, repeatZ,          // 左上
+            repeatX, repeatZ       // 右上
         ]);
         
         // Alternate lane colors for better visibility
@@ -689,7 +756,20 @@ class Lane {
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, this.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, this.colors, 4, gl.FLOAT);
-        this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT); // 初始化法向量緩衝區
+        this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT);
+        this.texCoordBuffer = initArrayBufferForLaterUse(gl, this.texCoords, 2, gl.FLOAT);
+        
+        // 載入紋理（如果提供了URL）
+        if (textureUrl) {
+            const self = this;
+            this.texture = loadTextureForObject(gl, textureUrl, function(texture) {
+                if (texture) {
+                    self.hasTexture = true;
+                    self.texture = texture;
+                    console.log('Lane紋理載入完成');
+                }
+            });
+        }
     }
     
     draw() {
@@ -698,12 +778,34 @@ class Lane {
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
-        initAttributeVariable(gl, program.a_Normal, this.normalBuffer); // 設置法向量屬性
+        initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
+        
+        // 如果有紋理座標屬性和紋理，則設置它們
+        if (program.a_TexCoord !== undefined && program.a_TexCoord !== -1) {
+            initAttributeVariable(gl, program.a_TexCoord, this.texCoordBuffer);
+            
+            if (this.hasTexture && this.texture) {
+                // 啟用紋理單元0
+                gl.activeTexture(gl.TEXTURE0);
+                // 綁定紋理
+                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                // 將紋理單元0分配給著色器中的取樣器
+                gl.uniform1i(program.u_Sampler, 0);
+                // 設置使用紋理的標誌
+                gl.uniform1i(program.u_UseTexture, 1);
+            } else {
+                // 不使用紋理
+                gl.uniform1i(program.u_UseTexture, 0);
+            }
+        }
+        
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        
+        if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
+            gl.uniform1i(program.u_UseTexture, 0);
+        }
     }
 }
-
-// 其餘代碼保持不變...
 
 // Player class (3D version with robot model and animation)
 class Player {
@@ -1326,6 +1428,9 @@ function main() {
     program.u_Kd = gl.getUniformLocation(program, 'u_Kd');
     program.u_Ks = gl.getUniformLocation(program, 'u_Ks');
     program.u_Shininess = gl.getUniformLocation(program, 'u_Shininess');
+    program.a_TexCoord = gl.getAttribLocation(program, 'a_TexCoord');
+    program.u_Sampler = gl.getUniformLocation(program, 'u_Sampler');
+    program.u_UseTexture = gl.getUniformLocation(program, 'u_UseTexture');
     
     if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1393,6 +1498,11 @@ function main() {
     gl.uniform1f(program.u_Kd, 0.9);
     gl.uniform1f(program.u_Ks, 0.9);
     gl.uniform1f(program.u_Shininess, 32.0);
+    lanes = [
+        new Lane(LANE_POSITIONS[0], 'floor.png'),
+        new Lane(LANE_POSITIONS[1], 'floor.png'),
+        new Lane(LANE_POSITIONS[2], 'floor.png')
+    ];
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
