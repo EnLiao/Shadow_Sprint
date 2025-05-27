@@ -5,7 +5,7 @@ var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
     attribute vec3 a_Normal;
-    attribute vec2 a_TexCoord;  // 新增：紋理座標
+    attribute vec2 a_TexCoord;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
@@ -16,8 +16,8 @@ var VSHADER_SOURCE = `
     uniform float u_Ks;
     uniform float u_Shininess;
     varying vec4 v_Color;
-    varying vec2 v_TexCoord;    // 新增：傳遞給片段著色器的紋理座標
-    varying float v_UseTexture; // 新增：是否使用紋理的標誌
+    varying vec2 v_TexCoord;   
+    varying float v_UseTexture;
     
     void main() {
         vec3 ambientLightColor = a_Color.rgb;
@@ -52,23 +52,21 @@ var VSHADER_SOURCE = `
             specular = u_Ks * pow(specAngle, u_Shininess) * specularLightColor; 
         }
         
-        // 合併環境光與漫反射光
         v_Color = vec4(ambient + diffuse + specular, 1.0);
         
         v_TexCoord = a_TexCoord;
         
-        // 檢查是否有有效的紋理座標（大於0表示使用紋理）
         v_UseTexture = 1.0;
     }
 `;
 
 var FSHADER_SOURCE = `
     precision mediump float;
-    uniform sampler2D u_Sampler;  // 紋理取樣器
-    uniform bool u_UseTexture;    // 是否使用紋理的標誌
+    uniform sampler2D u_Sampler;  
+    uniform bool u_UseTexture;    
     varying vec4 v_Color;
-    varying vec2 v_TexCoord;      // 從頂點著色器傳來的紋理座標
-    varying float v_UseTexture;   // 從頂點著色器傳來的紋理使用標誌
+    varying vec2 v_TexCoord;     
+    varying float v_UseTexture; 
     
     void main() {
         if (u_UseTexture) {
@@ -177,19 +175,16 @@ function loadTextureForObject(gl, url, callback) {
     image.onload = function() {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         
-        // 上下翻轉圖像，因為WebGL的紋理座標系與圖像座標系不同
+        // 上下翻轉圖像
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
         
-        // 將圖像數據傳給WebGL
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
         
-        // 設置紋理參數
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         
-        // 解除綁定
         gl.bindTexture(gl.TEXTURE_2D, null);
         
         console.log('紋理載入成功：' + url);
@@ -202,7 +197,6 @@ function loadTextureForObject(gl, url, callback) {
         if (callback) callback(null);
     };
     
-    // 開始加載圖像
     image.src = url;
     
     return texture;
@@ -620,7 +614,7 @@ function createCylinder(radius, height, segments, r, g, b) {
     const vertices = [];
     const colors = [];
     const indices = [];
-    const normals = []; // 添加法向量陣列
+    const normals = [];
     
     // Create the vertices for top and bottom faces
     // Center of top face
@@ -734,9 +728,8 @@ class Lane {
              w, 0,  l   // top right
         ]);
         
-        // 紋理座標 - 根據跑道長度調整重複次數
-        const repeatX = 1.0;       // 橫向重複次數
-        const repeatZ = 5.0;      // 縱向重複次數（跑道方向）
+        const repeatX = 1.0;      
+        const repeatZ = 5.0;  
         
         this.texCoords = new Float32Array([
             0.0, 0.0,              // 左下
@@ -764,14 +757,13 @@ class Lane {
         this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT);
         this.texCoordBuffer = initArrayBufferForLaterUse(gl, this.texCoords, 2, gl.FLOAT);
         
-        // 載入紋理（如果提供了URL）
         if (textureUrl) {
             const self = this;
             this.texture = loadTextureForObject(gl, textureUrl, function(texture) {
                 if (texture) {
                     self.hasTexture = true;
                     self.texture = texture;
-                    console.log('Lane紋理載入完成');
+                    console.log('Lane texture 載入完成');
                 }
             });
         }
@@ -785,19 +777,14 @@ class Lane {
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
         initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
         
-        // 如果有紋理座標屬性和紋理，則設置它們
         if (program.a_TexCoord !== undefined && program.a_TexCoord !== -1) {
             initAttributeVariable(gl, program.a_TexCoord, this.texCoordBuffer);
             
             if (this.hasTexture && this.texture) {
-                // 啟用紋理單元0
                 gl.activeTexture(gl.TEXTURE0);
-                // 綁定紋理
                 gl.bindTexture(gl.TEXTURE_2D, this.texture);
                 console.log('BOUND TEX2D =', gl.getParameter(gl.TEXTURE_BINDING_2D));
-                // 將紋理單元0分配給著色器中的取樣器
                 gl.uniform1i(program.u_Sampler, 0);
-                // 設置使用紋理的標誌
                 gl.uniform1i(program.u_UseTexture, 1);
             } else {
                 // 不使用紋理
