@@ -20,11 +20,8 @@ var VSHADER_SOURCE = `
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
         vec3 ambient = ambientLightColor * u_Ka;
         
-        // 計算世界座標中的頂點位置
         vec3 positionInWorld = (u_ModelMatrix * a_Position).xyz;
         
-        // 計算法向量（需要特殊處理以保持垂直性）
-        // 使用法線矩陣（模型矩陣的逆轉置）來變換法向量
         mat4 normalMatrix = mat4(
             vec4(u_ModelMatrix[0].xyz, 0.0),
             vec4(u_ModelMatrix[1].xyz, 0.0),
@@ -33,13 +30,10 @@ var VSHADER_SOURCE = `
         );
         vec3 normal = normalize((normalMatrix * vec4(a_Normal, 0.0)).xyz);
         
-        // 計算光線方向（從頂點指向光源）
         vec3 lightDirection = normalize(u_LightPosition - positionInWorld);
         
-        // 計算漫反射係數（光線方向與法向量的點積）
         float nDotL = max(dot(normal, lightDirection), 0.0);
         
-        // 計算漫反射顏色
         vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
 
         vec3 specular = vec3(0.0, 0.0, 0.0);
