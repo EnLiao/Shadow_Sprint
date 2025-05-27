@@ -1389,9 +1389,9 @@ function main() {
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
     gl.uniform3f(program.u_LightPosition, 3.0, 50.0, -20.0);
     gl.uniform3f(program.u_ViewPosition, 0.0, 5.0, 5.0); // Camera position
-    gl.uniform1f(program.u_Ka, 0.5);
-    gl.uniform1f(program.u_Kd, 0.8);
-    gl.uniform1f(program.u_Ks, 0.8);
+    gl.uniform1f(program.u_Ka, 0.3);
+    gl.uniform1f(program.u_Kd, 0.9);
+    gl.uniform1f(program.u_Ks, 0.9);
     gl.uniform1f(program.u_Shininess, 32.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
