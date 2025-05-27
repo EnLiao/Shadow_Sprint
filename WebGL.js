@@ -1492,12 +1492,13 @@ function main() {
     
     // Initial clear
     gl.clearColor(0.2, 0.2, 0.2, 1.0); // Dark grey background
-    gl.uniform3f(program.u_LightPosition, 3.0, 50.0, -20.0);
+    const lightX = 0.0, lightY = 12.0, lightZ = 7.0;
+    gl.uniform3f(program.u_LightPosition, lightX, lightY, lightZ);
     gl.uniform3f(program.u_ViewPosition, 0.0, 5.0, 5.0); // Camera position
-    gl.uniform1f(program.u_Ka, 0.3);
-    gl.uniform1f(program.u_Kd, 0.9);
-    gl.uniform1f(program.u_Ks, 0.9);
-    gl.uniform1f(program.u_Shininess, 32.0);
+    gl.uniform1f(program.u_Ka, 0.4);
+    gl.uniform1f(program.u_Kd, 2.0);
+    gl.uniform1f(program.u_Ks, 2.0);
+    gl.uniform1f(program.u_Shininess, 128.0);
     lanes = [
         new Lane(LANE_POSITIONS[0], 'floor.png'),
         new Lane(LANE_POSITIONS[1], 'floor.png'),
