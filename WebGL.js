@@ -1,5 +1,7 @@
 let skyboxProgram;
 let skybox;
+let laneTextureOffset = 0.0;
+const laneScrollSpeed = -0.005;
 
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
@@ -67,10 +69,11 @@ var FSHADER_SOURCE = `
     varying vec4 v_Color;
     varying vec2 v_TexCoord;     
     varying float v_UseTexture; 
+    uniform float u_TexOffset;
     
     void main() {
         if (u_UseTexture) {
-            vec4 texColor = texture2D(u_Sampler, v_TexCoord);
+            vec4 texColor = texture2D(u_Sampler, v_TexCoord + vec2(0.0, u_TexOffset));
             gl_FragColor = texColor * v_Color;
         } else {
             gl_FragColor = v_Color;
@@ -772,6 +775,7 @@ class Lane {
     draw() {
         modelMatrix.setTranslate(this.x, this.y, this.z);
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
+        gl.uniform1f(program.u_TexOffset, laneTextureOffset);
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
@@ -1426,6 +1430,7 @@ function main() {
     program.a_TexCoord = gl.getAttribLocation(program, 'a_TexCoord');
     program.u_Sampler = gl.getUniformLocation(program, 'u_Sampler');
     program.u_UseTexture = gl.getUniformLocation(program, 'u_UseTexture');
+    program.u_TexOffset = gl.getUniformLocation(program, 'u_TexOffset');
     
     if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1518,6 +1523,8 @@ function tick(timestamp) {
     gl.depthMask(true);
     gl.depthFunc(gl.LESS);
 
+    laneTextureOffset += laneScrollSpeed;
+    if (laneTextureOffset > 1.0) laneTextureOffset -= 1.0;
     
     animationFrameId = requestAnimationFrame(tick);
     
