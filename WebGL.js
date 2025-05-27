@@ -1,3 +1,5 @@
+console.log('=== WebGL.js loaded ===');
+
 let skyboxProgram;
 let skybox;
 
@@ -71,9 +73,12 @@ var FSHADER_SOURCE = `
     varying float v_UseTexture;   // 從頂點著色器傳來的紋理使用標誌
     
     void main() {
-        vec4 texColor = texture2D(u_Sampler, v_TexCoord);
-        gl_FragColor = texColor * v_Color;
-        //gl_FragColor = v_Color;
+        if (u_UseTexture) {
+            vec4 texColor = texture2D(u_Sampler, v_TexCoord);
+            gl_FragColor = texColor * v_Color;
+        } else {
+            gl_FragColor = v_Color;
+        }
     }
 `;
 
@@ -181,10 +186,10 @@ function loadTextureForObject(gl, url, callback) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
         
         // 設置紋理參數
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); // 使用重複模式
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); // 使用重複模式
         
         // 解除綁定
         gl.bindTexture(gl.TEXTURE_2D, null);
@@ -709,6 +714,8 @@ function createCylinder(radius, height, segments, r, g, b) {
 // Lane class (3D version)
 class Lane {
     constructor(position, textureUrl) {
+        console.log('[Lane] this:', this, 'textureUrl:', textureUrl);
+
         this.x = position;
         this.y = 0;
         this.z = -LANE_LENGTH / 2; // Center of the lane
@@ -789,12 +796,14 @@ class Lane {
                 gl.activeTexture(gl.TEXTURE0);
                 // 綁定紋理
                 gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                console.log('BOUND TEX2D =', gl.getParameter(gl.TEXTURE_BINDING_2D));
                 // 將紋理單元0分配給著色器中的取樣器
                 gl.uniform1i(program.u_Sampler, 0);
                 // 設置使用紋理的標誌
                 gl.uniform1i(program.u_UseTexture, 1);
             } else {
                 // 不使用紋理
+                //console.log('No texture for lane, using color only');
                 gl.uniform1i(program.u_UseTexture, 0);
             }
         }
@@ -804,6 +813,7 @@ class Lane {
         if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
             gl.uniform1i(program.u_UseTexture, 0);
         }
+        console.log(gl.getParameter(gl.ACTIVE_TEXTURE))
     }
 }
 
@@ -1340,10 +1350,10 @@ function initGame() {
     trainSpawnInterval = 2.0;
     
     // Create lanes
-    lanes = [];
+    /*lanes = [];
     for (let i = 0; i < 3; i++) {
         lanes.push(new Lane(LANE_POSITIONS[i]));
-    }
+    }*/
     
     // Create player in the middle lane
     player = new Player(1);
