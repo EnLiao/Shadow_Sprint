@@ -1060,6 +1060,7 @@ class Train {
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, cube.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, cube.colors, 4, gl.FLOAT);
+        this.normalBuffer = initArrayBufferForLaterUse(gl, cube.normals, 3, gl.FLOAT);   // 新增
         this.indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, cube.indices, gl.STATIC_DRAW);
