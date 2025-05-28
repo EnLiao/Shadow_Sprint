@@ -2,6 +2,7 @@ let skyboxProgram;
 let skybox;
 let laneTextureOffset = 0.0;
 const laneScrollSpeed = -0.005;
+let bgm, coinSound, deathSound;
 
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
@@ -1265,6 +1266,7 @@ function checkCoinCollision() {
             
             // Collect the coin
             coins[i].collected = true;
+            coinSound.play();
             coinCount++;
             
             // Update UI
@@ -1358,6 +1360,7 @@ function initGame() {
 
 function startGame() {
     gameState = 'playing';
+    bgm.play();
     startScreenDiv.style.display = 'none';
     gameOverScreenDiv.style.display = 'none';
     canvas.style.display = 'block';
@@ -1366,6 +1369,8 @@ function startGame() {
 
 function gameOver() {
     gameState = 'gameOverScreen';
+    deathSound.play();
+    bgm.pause();
     gameOverScreenDiv.style.display = 'block';
     if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
@@ -1376,6 +1381,16 @@ function gameOver() {
 // Main function (entry point from HTML)
 function main() {
     // Get UI elements
+    bgm = new Audio('music.mp3');
+    bgm.loop = true;
+    bgm.volume = 0.5;
+
+    coinSound = new Audio('coin.mp3');
+    coinSound.volume = 1.0;
+
+    deathSound = new Audio('death.mp3');
+    coinSound.volume = 1.0;
+
     canvas = document.getElementById('webgl');
     startScreenDiv = document.getElementById('startScreen');
     gameOverScreenDiv = document.getElementById('gameOverScreen');
