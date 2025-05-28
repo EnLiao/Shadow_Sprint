@@ -1450,14 +1450,14 @@ function gameOver() {
 // Main function (entry point from HTML)
 function main() {
     // Get UI elements
-    bgm = new Audio('music.mp3');
+    bgm = new Audio('audio/music.mp3');
     bgm.loop = true;
     bgm.volume = 0.5;
 
-    coinSound = new Audio('coin.mp3');
+    coinSound = new Audio('audio/coin.mp3');
     coinSound.volume = 1.0;
 
-    deathSound = new Audio('death.mp3');
+    deathSound = new Audio('audio/death.mp3');
     coinSound.volume = 1.0;
 
     canvas = document.getElementById('webgl');
@@ -1582,7 +1582,7 @@ function main() {
     gl.uniform3f(program.u_ViewPosition, 0.0, 5.0, 5.0); // Camera position
     gl.uniform1f(program.u_Ka, 0.4);
     gl.uniform1f(program.u_Kd, 2.0);
-    gl.uniform1f(program.u_Ks, 2.0);
+    gl.uniform1f(program.u_Ks, 3.0);
     gl.uniform1f(program.u_Shininess, 128.0);
     lanes = [
         new Lane(LANE_POSITIONS[0], 'floor.png'),
