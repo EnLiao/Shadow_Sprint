@@ -4,63 +4,91 @@ let laneTextureOffset = 0.0;
 const laneScrollSpeed = -0.005;
 let bgm, coinSound, deathSound;
 
+// 繪製物體的反射
 function drawReflection(object, reflectionAlpha = 0.3) {
+    // 保存當前的混合模式和深度測試狀態
     const blendEnabled = gl.isEnabled(gl.BLEND);
     const depthTestEnabled = gl.isEnabled(gl.DEPTH_TEST);
     const currentBlendSrcFunc = gl.getParameter(gl.BLEND_SRC_RGB);
     const currentBlendDstFunc = gl.getParameter(gl.BLEND_DST_RGB);
     
+    // 啟用混合模式，使反射半透明
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     
+    // 創建反射的模型矩陣
     const reflectionMatrix = new Matrix4();
     
+    // 1. 平移到物體位置
     reflectionMatrix.setTranslate(object.x, 0, object.z);
     
+    // 2. 在Y軸上進行鏡像反射（Y座標取負值）
     reflectionMatrix.scale(1.0, -1.0, 1.0);
     
+    // 3. 稍微提高一點點，避免z-fighting
     reflectionMatrix.translate(0, -0.01, 0);
     
+    // 4. 如果物體有旋轉（如金幣），也要套用
     if (object instanceof Coin) {
         reflectionMatrix.rotate(object.rotationY, 0, 1, 0);
     }
     
+    // 設置反射的模型矩陣
     gl.uniformMatrix4fv(program.u_ModelMatrix, false, reflectionMatrix.elements);
     
+    // 創建一個半透明的顏色緩衝區
     const reflectionColors = new Float32Array(object.colorBuffer.num * 4 * 24); // 假設每個物體最多有24個頂點
+    
+    // 針對不同物體設定不同的反射顏色
+    let colorValue = 0.5; // 預設反射顏色值
+    
+    // 如果是玩家(Player)，使用更暗的顏色以去除白色區塊
+    if (object instanceof Player) {
+    colorValue = 0.08; // 更黑
+    reflectionAlpha = 0.01; // 更透明
+    reflectionMatrix.scale(0.8, -0.3, 0.8); 
+}
+    
     for (let i = 0; i < reflectionColors.length; i += 4) {
-        reflectionColors[i] = 0.5;     // R - 減弱的顏色
-        reflectionColors[i+1] = 0.5;   // G - 減弱的顏色
-        reflectionColors[i+2] = 0.5;   // B - 減弱的顏色
+        reflectionColors[i] = colorValue;     // R - 減弱的顏色
+        reflectionColors[i+1] = colorValue;   // G - 減弱的顏色
+        reflectionColors[i+2] = colorValue;   // B - 減弱的顏色
         reflectionColors[i+3] = reflectionAlpha;  // A - 半透明
     }
     
+    // 創建反射的顏色緩衝區
     const reflectionColorBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, reflectionColorBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, reflectionColors, gl.STATIC_DRAW);
     reflectionColorBuffer.num = object.colorBuffer.num;
     reflectionColorBuffer.type = object.colorBuffer.type;
     
+    // 設置頂點和顏色屬性
     initAttributeVariable(gl, program.a_Position, object.vertexBuffer);
     initAttributeVariable(gl, program.a_Color, reflectionColorBuffer);
     
+    // 如果有法向量緩衝區，也要設置
     if (program.a_Normal !== -1 && object.normalBuffer) {
         initAttributeVariable(gl, program.a_Normal, object.normalBuffer);
     }
     
+    // 關閉紋理
     if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
         gl.uniform1i(program.u_UseTexture, 0);
     }
     
+    // 繪製反射
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, object.indexBuffer);
     gl.drawElements(gl.TRIANGLES, object.numIndices, gl.UNSIGNED_BYTE, 0);
     
+    // 恢復原來的混合模式和深度測試狀態
     if (!blendEnabled) {
         gl.disable(gl.BLEND);
     } else {
         gl.blendFunc(currentBlendSrcFunc, currentBlendDstFunc);
     }
     
+    // 清理
     gl.deleteBuffer(reflectionColorBuffer);
 }
 
@@ -1669,10 +1697,10 @@ function tick(timestamp) {
     }
     
     // 繪製trains的反射
-    for (let i = trains.length - 1; i >= 0; i--) {
+    /*for (let i = trains.length - 1; i >= 0; i--) {
         if (trains[i].z > 5) continue; // 跳過已經超出視野的火車
         drawReflection(trains[i], 0.3);
-    }
+    }*/
     
     // 繪製player的反射
     if (player) {
