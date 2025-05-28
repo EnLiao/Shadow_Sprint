@@ -2,6 +2,7 @@ let skyboxProgram;
 let skybox;
 let laneTextureOffset = 0.0;
 const laneScrollSpeed = -0.005;
+let enableShadows = true;
 
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
@@ -170,6 +171,66 @@ let trainSpawnInterval = 2.0; // seconds
 let lastTrainSpawnTime = 0;
 let coinSpawnInterval = 1.5; // seconds
 let lastCoinSpawnTime = 0;
+
+function drawShadow(vertexBuffer, indexBuffer, numIndices, x, y, z, width, height, depth) {
+    // 保存當前的混合模式和深度測試狀態
+    const blendEnabled = gl.isEnabled(gl.BLEND);
+    const depthTestEnabled = gl.isEnabled(gl.DEPTH_TEST);
+    const currentBlendSrcFunc = gl.getParameter(gl.BLEND_SRC_RGB);
+    const currentBlendDstFunc = gl.getParameter(gl.BLEND_DST_RGB);
+    
+    // 啟用混合模式，使陰影半透明
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    
+    // 創建陰影的模型矩陣
+    // 1. 平移到物體位置
+    // 2. 在Y軸上壓扁（高度設為很小的值）
+    // 3. 稍微提高一點點，避免z-fighting
+    const shadowModelMatrix = new Matrix4();
+    shadowModelMatrix.setTranslate(x, 0.01, z); // 陰影位於地面上方一點點
+    shadowModelMatrix.scale(1.0, 0.01, 1.0);    // 壓扁Y軸
+    
+    // 設置陰影的模型矩陣
+    gl.uniformMatrix4fv(program.u_ModelMatrix, false, shadowModelMatrix.elements);
+    
+    // 創建一個黑色半透明的顏色緩衝區
+    const shadowColor = new Float32Array(4 * 24); // 假設每個物體最多有24個頂點
+    for (let i = 0; i < shadowColor.length; i += 4) {
+        shadowColor[i] = 0.0;     // R
+        shadowColor[i+1] = 0.0;   // G
+        shadowColor[i+2] = 0.0;   // B
+        shadowColor[i+3] = 0.3;   // A (半透明，調整為0.3更自然)
+    }
+    
+    // 創建陰影的顏色緩衝區
+    const shadowColorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, shadowColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, shadowColor, gl.STATIC_DRAW);
+    
+    // 設置頂點和顏色屬性
+    initAttributeVariable(gl, program.a_Position, vertexBuffer);
+    initAttributeVariable(gl, program.a_Color, shadowColorBuffer);
+    
+    // 關閉紋理
+    if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
+        gl.uniform1i(program.u_UseTexture, 0);
+    }
+    
+    // 繪製陰影
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.drawElements(gl.TRIANGLES, numIndices, gl.UNSIGNED_BYTE, 0);
+    
+    // 恢復原來的混合模式和深度測試狀態
+    if (!blendEnabled) {
+        gl.disable(gl.BLEND);
+    } else {
+        gl.blendFunc(currentBlendSrcFunc, currentBlendDstFunc);
+    }
+    
+    // 清理
+    gl.deleteBuffer(shadowColorBuffer);
+}
 
 function loadTextureForObject(gl, url, callback) {
     const texture = gl.createTexture();
@@ -1016,6 +1077,19 @@ class Player {
     }
     
     draw() {
+        if (enableShadows) {
+            drawShadow(
+                this.vertexBuffer, 
+                this.indexBuffer, 
+                this.numIndices, 
+                this.x, 
+                this.y, 
+                this.z, 
+                PLAYER_WIDTH, 
+                PLAYER_HEIGHT, 
+                PLAYER_DEPTH
+            );
+        }
         modelMatrix.setTranslate(this.x, this.y, this.z);
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
         
@@ -1073,6 +1147,20 @@ class Train {
     }
     
     draw() {
+
+        if (enableShadows) {
+            drawShadow(
+                this.vertexBuffer, 
+                this.indexBuffer, 
+                this.numIndices, 
+                this.x, 
+                this.y, 
+                this.z, 
+                PLAYER_WIDTH, 
+                PLAYER_HEIGHT, 
+                PLAYER_DEPTH
+            );
+        }
         modelMatrix.setTranslate(this.x, this.y, this.z);
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
         
@@ -1131,6 +1219,20 @@ class Coin {
     }
     
     draw() {
+        if (enableShadows) {
+        // 不旋轉陰影，只平移
+            drawShadow(
+                this.vertexBuffer, 
+                this.indexBuffer, 
+                this.numIndices, 
+                this.x, 
+                this.y, 
+                this.z, 
+                COIN_RADIUS * 2, 
+                COIN_HEIGHT, 
+                COIN_RADIUS * 2
+            );
+        }
         modelMatrix.setTranslate(this.x, this.y, this.z);
         modelMatrix.rotate(this.rotationY, 0, 1, 0); // Rotate around Y axis
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
