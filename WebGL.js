@@ -4,6 +4,66 @@ let laneTextureOffset = 0.0;
 const laneScrollSpeed = -0.005;
 let bgm, coinSound, deathSound;
 
+function drawReflection(object, reflectionAlpha = 0.3) {
+    const blendEnabled = gl.isEnabled(gl.BLEND);
+    const depthTestEnabled = gl.isEnabled(gl.DEPTH_TEST);
+    const currentBlendSrcFunc = gl.getParameter(gl.BLEND_SRC_RGB);
+    const currentBlendDstFunc = gl.getParameter(gl.BLEND_DST_RGB);
+    
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    
+    const reflectionMatrix = new Matrix4();
+    
+    reflectionMatrix.setTranslate(object.x, 0, object.z);
+    
+    reflectionMatrix.scale(1.0, -1.0, 1.0);
+    
+    reflectionMatrix.translate(0, -0.01, 0);
+    
+    if (object instanceof Coin) {
+        reflectionMatrix.rotate(object.rotationY, 0, 1, 0);
+    }
+    
+    gl.uniformMatrix4fv(program.u_ModelMatrix, false, reflectionMatrix.elements);
+    
+    const reflectionColors = new Float32Array(object.colorBuffer.num * 4 * 24); // 假設每個物體最多有24個頂點
+    for (let i = 0; i < reflectionColors.length; i += 4) {
+        reflectionColors[i] = 0.5;     // R - 減弱的顏色
+        reflectionColors[i+1] = 0.5;   // G - 減弱的顏色
+        reflectionColors[i+2] = 0.5;   // B - 減弱的顏色
+        reflectionColors[i+3] = reflectionAlpha;  // A - 半透明
+    }
+    
+    const reflectionColorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, reflectionColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, reflectionColors, gl.STATIC_DRAW);
+    reflectionColorBuffer.num = object.colorBuffer.num;
+    reflectionColorBuffer.type = object.colorBuffer.type;
+    
+    initAttributeVariable(gl, program.a_Position, object.vertexBuffer);
+    initAttributeVariable(gl, program.a_Color, reflectionColorBuffer);
+    
+    if (program.a_Normal !== -1 && object.normalBuffer) {
+        initAttributeVariable(gl, program.a_Normal, object.normalBuffer);
+    }
+    
+    if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
+        gl.uniform1i(program.u_UseTexture, 0);
+    }
+    
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, object.indexBuffer);
+    gl.drawElements(gl.TRIANGLES, object.numIndices, gl.UNSIGNED_BYTE, 0);
+    
+    if (!blendEnabled) {
+        gl.disable(gl.BLEND);
+    } else {
+        gl.blendFunc(currentBlendSrcFunc, currentBlendDstFunc);
+    }
+    
+    gl.deleteBuffer(reflectionColorBuffer);
+}
+
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
@@ -1601,7 +1661,25 @@ function tick(timestamp) {
         lastCoinSpawnTime = timestamp;
     }
     
-    // Update and draw coins
+    // 先繪製所有物體的反射
+    // 繪製coins的反射
+    for (let i = coins.length - 1; i >= 0; i--) {
+        if (coins[i].z > 5) continue; // 跳過已經超出視野的金幣
+        drawReflection(coins[i], 0.5); // 金幣反射透明度較高
+    }
+    
+    // 繪製trains的反射
+    for (let i = trains.length - 1; i >= 0; i--) {
+        if (trains[i].z > 5) continue; // 跳過已經超出視野的火車
+        drawReflection(trains[i], 0.3);
+    }
+    
+    // 繪製player的反射
+    if (player) {
+        drawReflection(player, 0.4); // 玩家反射透明度適中
+    }
+    
+    // 更新和繪製coins
     for (let i = coins.length - 1; i >= 0; i--) {
         coins[i].update(deltaTime);
         coins[i].draw();
@@ -1612,7 +1690,7 @@ function tick(timestamp) {
         }
     }
     
-    // Update and draw trains
+    // 更新和繪製trains
     for (let i = trains.length - 1; i >= 0; i--) {
         trains[i].update(deltaTime);
         trains[i].draw();
@@ -1625,7 +1703,7 @@ function tick(timestamp) {
         }
     }
     
-    // Update and draw player
+    // 更新和繪製player
     if (player) {
         player.update(deltaTime);
         player.draw();
