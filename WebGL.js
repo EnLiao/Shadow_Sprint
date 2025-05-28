@@ -2,83 +2,97 @@ let skyboxProgram;
 let skybox;
 let laneTextureOffset = 0.0;
 const laneScrollSpeed = -0.005;
+let normalTexture;
+let normalImg;
 
 var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Color;
     attribute vec3 a_Normal;
     attribute vec2 a_TexCoord;
+    attribute vec3 a_Tangent;
     uniform mat4 u_ModelMatrix;
     uniform mat4 u_ViewMatrix;
     uniform mat4 u_ProjMatrix;
     uniform vec3 u_LightPosition;
     uniform vec3 u_ViewPosition;
-    uniform float u_Ka;
-    uniform float u_Kd;
-    uniform float u_Ks;
     uniform float u_Shininess;
     varying vec4 v_Color;
-    varying vec2 v_TexCoord;   
-    varying float v_UseTexture;
-    
+    varying vec2 v_TexCoord;
+    varying mat3 v_TBN;
+    varying vec3 v_Position;
+
     void main() {
-        vec3 ambientLightColor = a_Color.rgb;
-        vec3 diffuseLightColor = a_Color.rgb;
-        vec3 specularLightColor = vec3(1.0, 1.0, 1.0); 
-
         gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
-        vec3 ambient = ambientLightColor * u_Ka;
-        
-        vec3 positionInWorld = (u_ModelMatrix * a_Position).xyz;
-        
-        mat4 normalMatrix = mat4(
-            vec4(u_ModelMatrix[0].xyz, 0.0),
-            vec4(u_ModelMatrix[1].xyz, 0.0),
-            vec4(u_ModelMatrix[2].xyz, 0.0),
-            vec4(0.0, 0.0, 0.0, 1.0)
-        );
-        vec3 normal = normalize((normalMatrix * vec4(a_Normal, 0.0)).xyz);
-        
-        vec3 lightDirection = normalize(u_LightPosition - positionInWorld);
-        
-        float nDotL = max(dot(normal, lightDirection), 0.0);
-        
-        vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
+        v_Position = (u_ModelMatrix * a_Position).xyz;
 
-        vec3 specular = vec3(0.0, 0.0, 0.0);
-        if(nDotL > 0.0) {
-            vec3 R = reflect(-lightDirection, normal);
-            // V: the vector, point to viewer       
-            vec3 V = normalize(u_ViewPosition - positionInWorld); 
-            float specAngle = clamp(dot(R, V), 0.0, 1.0);
-            specular = u_Ks * pow(specAngle, u_Shininess) * specularLightColor; 
-        }
-        
-        v_Color = vec4(ambient + diffuse + specular, 1.0);
-        
+        vec3 T = normalize(mat3(u_ModelMatrix) * a_Tangent);
+        vec3 N = normalize(mat3(u_ModelMatrix) * a_Normal);
+        vec3 B = cross(N, T);
+        v_TBN = mat3(T, B, N);
+
         v_TexCoord = a_TexCoord;
-        
-        v_UseTexture = 1.0;
+        v_Color = a_Color; // <-- 傳 base 顏色給 fragment shader
     }
+
 `;
 
 var FSHADER_SOURCE = `
     precision mediump float;
-    uniform sampler2D u_Sampler;  
-    uniform bool u_UseTexture;    
-    varying vec4 v_Color;
-    varying vec2 v_TexCoord;     
-    varying float v_UseTexture; 
+    uniform sampler2D u_Sampler;
+    uniform float u_Ka;
+    uniform float u_Kd;
+    uniform float u_Ks;
+    uniform vec3 u_LightPosition;
+    uniform vec3 u_ViewPosition;
+    uniform float u_Shininess;
+    uniform bool u_UseTexture;
     uniform float u_TexOffset;
-    
+    uniform sampler2D u_NormalMap;
+    uniform bool u_UseBump;
+
+    varying vec4 v_Color;
+    varying vec2 v_TexCoord;
+    varying mat3 v_TBN;
+    varying vec3 v_Position;
+
     void main() {
-        if (u_UseTexture) {
-            vec4 texColor = texture2D(u_Sampler, v_TexCoord + vec2(0.0, u_TexOffset));
-            gl_FragColor = texColor * v_Color;
+        if (!u_UseBump) {
+            if (u_UseTexture) {
+                vec4 texColor = texture2D(u_Sampler, v_TexCoord + vec2(0.0, u_TexOffset));
+                gl_FragColor = texColor * v_Color;
+            } else {
+                gl_FragColor = v_Color;
+            }
         } else {
-            gl_FragColor = v_Color;
+            // Bump mapping (per-fragment lighting)
+            vec3 normalTex = texture2D(u_NormalMap, v_TexCoord + vec2(0.0, u_TexOffset)).rgb * 2.0 - 1.0;
+            vec3 normal = normalize(v_TBN * normalTex);
+
+            vec3 lightDir = normalize(u_LightPosition - v_Position);
+            float nDotL = max(dot(normal, lightDir), 0.0);
+
+            vec3 diffuseColor = v_Color.rgb;
+            if (u_UseTexture) {
+                diffuseColor = texture2D(u_Sampler, v_TexCoord + vec2(0.0, u_TexOffset)).rgb;
+            }
+
+            vec3 ambient = diffuseColor * u_Ka;
+            vec3 diffuse = diffuseColor * u_Kd * nDotL;
+
+            vec3 specular = vec3(0.0);
+            if(nDotL > 0.0) {
+                vec3 R = reflect(-lightDir, normal);
+                vec3 V = normalize(u_ViewPosition - v_Position);
+                float specAngle = max(dot(R, V), 0.0);
+                specular = u_Ks * pow(specAngle, u_Shininess) * vec3(1.0);
+            }
+
+            vec3 color = ambient + diffuse + specular;
+            gl_FragColor = vec4(color, 1.0);
         }
     }
+
 `;
 
 var SKYBOX_VSHADER_SOURCE = `
@@ -474,7 +488,22 @@ function createCube(width, height, depth, r, g, b) {
         20, 21, 22, 20, 22, 23  // left
     ]);
 
-    return { vertices, colors, normals, indices };
+    const tangents = new Float32Array([
+        // Front/Top/Bottom: x軸為 tangent
+        1,0,0,  1,0,0,  1,0,0,  1,0,0,
+        // Back: -x
+        -1,0,0, -1,0,0, -1,0,0, -1,0,0,
+        // Top
+        1,0,0,  1,0,0,  1,0,0,  1,0,0,
+        // Bottom
+        1,0,0,  1,0,0,  1,0,0,  1,0,0,
+        // Right: z負方向 tangent
+        0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1,
+        // Left: z正方向 tangent
+        0,0,1,  0,0,1,  0,0,1,  0,0,1
+    ]);
+
+    return { vertices, colors, normals, indices, tangents };
 }
 
 // Create a robot model (for player)
@@ -709,8 +738,6 @@ function createCylinder(radius, height, segments, r, g, b) {
 // Lane class (3D version)
 class Lane {
     constructor(position, textureUrl) {
-        console.log('[Lane] this:', this, 'textureUrl:', textureUrl);
-
         this.x = position;
         this.y = 0;
         this.z = -LANE_LENGTH / 2; // Center of the lane
@@ -750,15 +777,24 @@ class Lane {
             ...laneColor, ...laneColor, ...laneColor, ...laneColor
         ]);
         
-        // 添加法向量 - 跑道面向上方
+        // 法向量 - 跑道面向上
         this.normals = new Float32Array([
             0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0
+        ]);
+
+        // **tangent - 跑道平面都沿著 X 軸 (1, 0, 0)**
+        this.tangents = new Float32Array([
+            1, 0, 0,
+            1, 0, 0,
+            1, 0, 0,
+            1, 0, 0
         ]);
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, this.vertices, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, this.colors, 4, gl.FLOAT);
         this.normalBuffer = initArrayBufferForLaterUse(gl, this.normals, 3, gl.FLOAT);
         this.texCoordBuffer = initArrayBufferForLaterUse(gl, this.texCoords, 2, gl.FLOAT);
+        this.tangentBuffer = initArrayBufferForLaterUse(gl, this.tangents, 3, gl.FLOAT);
         
         if (textureUrl) {
             const self = this;
@@ -780,31 +816,46 @@ class Lane {
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
         initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
+        initAttributeVariable(gl, program.a_Tangent, this.tangentBuffer);
         
         if (program.a_TexCoord !== undefined && program.a_TexCoord !== -1) {
             initAttributeVariable(gl, program.a_TexCoord, this.texCoordBuffer);
             
             if (this.hasTexture && this.texture) {
+                // 綁定漫反射紋理到紋理單元 0
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, this.texture);
-                console.log('BOUND TEX2D =', gl.getParameter(gl.TEXTURE_BINDING_2D));
                 gl.uniform1i(program.u_Sampler, 0);
                 gl.uniform1i(program.u_UseTexture, 1);
+                
+                // 綁定法線貼圖到紋理單元 1
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+                gl.uniform1i(program.u_NormalMap, 1);
+                
+                // 啟用 bump mapping
+                gl.uniform1i(program.u_UseBump, true);
             } else {
-                // 不使用紋理
-                //console.log('No texture for lane, using color only');
                 gl.uniform1i(program.u_UseTexture, 0);
+                gl.uniform1i(program.u_UseBump, false);
             }
         }
         
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        
-        if (program.u_UseTexture !== undefined && program.u_UseTexture !== -1) {
-            gl.uniform1i(program.u_UseTexture, 0);
-        }
-        console.log(gl.getParameter(gl.ACTIVE_TEXTURE))
+        // 在 draw 方法結尾處
+        gl.uniform1i(program.u_UseTexture, 0);
+        gl.uniform1i(program.u_UseBump, false);
+
+        // 解除紋理綁定
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
     }
+
 }
+
 
 // Player class (3D version with robot model and animation)
 class Player {
@@ -1059,6 +1110,8 @@ class Train {
         const cube = createCube(TRAIN_WIDTH, TRAIN_HEIGHT, TRAIN_DEPTH, r, g, b);
         
         this.vertexBuffer = initArrayBufferForLaterUse(gl, cube.vertices, 3, gl.FLOAT);
+        this.normalBuffer = initArrayBufferForLaterUse(gl, cube.normals, 3, gl.FLOAT);   // 新增
+        this.tangentBuffer = initArrayBufferForLaterUse(gl, cube.tangents, 3, gl.FLOAT);
         this.colorBuffer = initArrayBufferForLaterUse(gl, cube.colors, 4, gl.FLOAT);
         this.indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
@@ -1072,15 +1125,36 @@ class Train {
     }
     
     draw() {
+        gl.uniform1i(program.u_UseBump, false);
         modelMatrix.setTranslate(this.x, this.y, this.z);
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
-        
+
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
-        
+        initAttributeVariable(gl, program.a_Normal, this.normalBuffer);
+        initAttributeVariable(gl, program.a_Tangent, this.tangentBuffer);
+
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+
+        // 啟用 bump mapping
+
+        // 綁定顏色貼圖（如果有）
+        // gl.activeTexture(gl.TEXTURE0);
+        // gl.bindTexture(gl.TEXTURE_2D, colorTexture); // 如果你有設 colorTexture，否則可註解
+        // gl.uniform1i(program.u_Sampler, 0);
+        gl.uniform1i(program.u_UseTexture, 0); // 如果沒顏色貼圖就設0
+
+        // 綁定 normal map
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+        gl.uniform1i(program.u_NormalMap, 1);
+
         gl.drawElements(gl.TRIANGLES, this.numIndices, gl.UNSIGNED_BYTE, 0);
+
+        // **畫完關掉 bump mapping，避免影響其他物件**
+        gl.uniform1i(program.u_UseBump, false);
     }
+
     
     // Get collision bounds for detection
     getBounds() {
@@ -1130,9 +1204,12 @@ class Coin {
     }
     
     draw() {
+        gl.uniform1i(program.u_UseBump, false);
+
         modelMatrix.setTranslate(this.x, this.y, this.z);
         modelMatrix.rotate(this.rotationY, 0, 1, 0); // Rotate around Y axis
         gl.uniformMatrix4fv(program.u_ModelMatrix, false, modelMatrix.elements);
+        gl.uniform1i(program.u_UseBump, false);
         
         initAttributeVariable(gl, program.a_Position, this.vertexBuffer);
         initAttributeVariable(gl, program.a_Color, this.colorBuffer);
@@ -1414,6 +1491,16 @@ function main() {
 
     skybox = new Skybox(gl, skyboxProgram, viewMatrix, projMatrix);
 
+    normalTexture = gl.createTexture();
+    normalImg = new Image();
+    normalImg.src = "normal_map.png";
+    normalImg.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, normalImg);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    };
+
     // Get attribute and uniform locations
     program.a_Position = gl.getAttribLocation(program, 'a_Position');
     program.a_Color = gl.getAttribLocation(program, 'a_Color');
@@ -1431,6 +1518,10 @@ function main() {
     program.u_Sampler = gl.getUniformLocation(program, 'u_Sampler');
     program.u_UseTexture = gl.getUniformLocation(program, 'u_UseTexture');
     program.u_TexOffset = gl.getUniformLocation(program, 'u_TexOffset');
+    program.a_Tangent = gl.getAttribLocation(program, 'a_Tangent');
+    program.u_NormalMap = gl.getUniformLocation(program, 'u_NormalMap');
+    program.u_UseBump = gl.getUniformLocation(program, 'u_UseBump');
+
     
     if (program.a_Position < 0 || program.a_Color < 0 || program.a_Normal < 0 ||
         !program.u_ModelMatrix || !program.u_ViewMatrix || !program.u_ProjMatrix) {
@@ -1499,6 +1590,16 @@ function main() {
     gl.uniform1f(program.u_Kd, 2.0);
     gl.uniform1f(program.u_Ks, 2.0);
     gl.uniform1f(program.u_Shininess, 128.0);
+    normalTexture = gl.createTexture();
+    normalImg = new Image();
+    normalImg.src = "normal_map.png";
+    normalImg.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, normalImg);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    };
+
     lanes = [
         new Lane(LANE_POSITIONS[0], 'floor.png'),
         new Lane(LANE_POSITIONS[1], 'floor.png'),
